@@ -1,0 +1,9 @@
+Keras==2.3.1
+keras-bert==0.81.0
+keras-contrib==2.0.8
+pandas==0.25.3
+numpy (1.18.5)
+scikit-learn==0.23.1
+tensorflow==1.13.2
+feedwork
+
