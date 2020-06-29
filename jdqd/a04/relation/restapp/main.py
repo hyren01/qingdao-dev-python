@@ -1,7 +1,7 @@
 from flask import Flask, g, request
 from neo4j import GraphDatabase, basic_auth
-from jdqd.relation_extract2.config.services import Config
-from jdqd.relation_extract2.services.relation_combine.relation_combine import extract
+from jdqd.a04.relation.config.services import Config
+from jdqd.a04.relation.services.relation_combine.relation_combine import extract
 
 app = Flask(__name__)
 config = Config()

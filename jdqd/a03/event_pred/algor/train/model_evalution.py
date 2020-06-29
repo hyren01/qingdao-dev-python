@@ -1,7 +1,12 @@
+# -*- coding: utf-8 -*-
+"""
+@Author: zhang xin
+@Time: 2020/6/16 10:38
+desc:
+"""
 import numpy as np
 import jdqd.a03.event_pred.algor.common.pgsql_util as pgsql
 import feedwork.AppinfoConf as appconf
-from keras.models import load_model
 from feedwork.utils import logger
 from jdqd.a03.event_pred.algor.common import preprocess as pp
 from jdqd.a03.event_pred.algor.predict import predict
@@ -208,20 +213,6 @@ def bleu(candidate, reference):
     return avg_score
 
 
-def load_models(model_dir):
-    """
-    加载模型文件目录下的模型
-    Args:
-      model_dir: 模型文件所在目录
-
-    Returns:
-      模型的 encoder, decoder
-    """
-    encoder = load_model(cat_path(model_dir, 'encoder.h5'), compile=False)
-    decoder = load_model(cat_path(model_dir, 'decoder.h5'), compile=False)
-    return encoder, decoder
-
-
 def evaluate_sub_model_by_event(event_col, preds, outputs_test):
     """根据特定事件评估子模型
     Args:
@@ -301,7 +292,7 @@ def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, ev
             if event_num == 0:
                 continue
             tier_precision, tier_recall, bleu_score, false_alert, num_fp, num_tp, num_tp_label, num_neg, num_pos, \
-            num_fa, num_comb_pos = evaluate_sub_model_by_event(i, preds, outputs_test)
+                num_fa, num_comb_pos = evaluate_sub_model_by_event(i, preds, outputs_test)
 
             tier_precision = round(tier_precision, 4)
             tier_recall = round(tier_recall, 4)
@@ -328,10 +319,10 @@ def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, ev
             tier_precisions.append(tier_precision)
             tier_recalls.append(tier_recall)
             bleus.append(bleu_score)
-
-            pgsql.insert_model_test(event, event_num, false_report, recall,
-                                    false_alert, tier_precision,
-                                    tier_recall, bleu_score, ModelEvalutionStatus.INVALID.value, detail_id)
+            # TODO 不同目录下的py文件都有数据库操作，应该规划好把这些不同性质的操作分离，这个地方没有记录评估失败的情况
+            #   应该有个方法为"模型预测"，多个子模型的循环应该由调用该方法的外层来完成，并且数据库操作统一由外层完成
+            pgsql.insert_model_test(event, event_num, false_report, recall, false_alert, tier_precision, tier_recall,
+                                    bleu_score, ModelEvalutionStatus.EFFECTIVE.value, detail_id)
 
         if bleus:
             bleu_summary = round(np.mean(bleus), 4)

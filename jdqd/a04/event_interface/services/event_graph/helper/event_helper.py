@@ -24,17 +24,16 @@ def __date_formatter(date_str):
     return date_str
 
 
-def __init_and_get_synonyms(rdms_db, update_synonyms):
+def __init_and_get_synonyms(update_synonyms):
     """
     根据主语、谓语、宾语对事件表进行字符匹配。注意，此方法会更新synonyms全局变量。
 
-    :param rdms_db: object.RDMS数据库连接对象
     :param update_synonyms: boolean.是否更新同义词
     """
     global synonyms
     if synonyms is None or update_synonyms:
         synonyms = {}
-        synonym_info = rdms_service.get_synonym(rdms_db)
+        synonym_info = rdms_service.get_synonym()
         for synonym in synonym_info:
             source_word = str(synonym['source_word'])
             targer_word = str(synonym['targer_word'])
@@ -61,11 +60,10 @@ def __init_and_get_synonyms(rdms_db, update_synonyms):
     return synonyms
 
 
-def __check_event_info_by_char(rdms_db, subject, verb, object, event_negaword, update_synonyms):
+def __check_event_info_by_char(subject, verb, object, event_negaword, update_synonyms):
     """
     根据主语、谓语、宾语对事件表进行字符匹配。
 
-    :param rdms_db: object.RDMS数据库连接对象
     :param subject: string.主语
     :param verb: string.谓语
     :param object: string.宾语
@@ -73,23 +71,22 @@ def __check_event_info_by_char(rdms_db, subject, verb, object, event_negaword, u
     :param update_synonyms: boolean.是否更新同义词
     :return 字符匹配事件是否成功。若匹配成功则返回：True, 事件列表；若匹配失败则返回：False, None。
     """
-    synonyms = __init_and_get_synonyms(rdms_db, update_synonyms)
+    synonyms = __init_and_get_synonyms(update_synonyms)
     subject_check = synonyms[subject].__add__([subject]) if subject in synonyms else [subject]
     verb_check = synonyms[verb].__add__([verb]) if verb in synonyms else [verb]
     object_check = synonyms[object].__add__([object]) if object in synonyms else [object]
     # 字符匹配事件表
-    event_infos = rdms_service.get_event_info(rdms_db, subject_check, verb_check, object_check, event_negaword)
+    event_infos = rdms_service.get_event_info(subject_check, verb_check, object_check, event_negaword)
     if event_infos is not None and len(event_infos) > 0:
         return True, event_infos
     else:
         return False, None
 
 
-def __check_event_attribute_by_char(rdms_db, event_id, event_date, event_local, nentity_org, nentity_person):
+def __check_event_attribute_by_char(event_id, event_date, event_local, nentity_org, nentity_person):
     """
     根据事件发生日期、事件发生地点、组织机构、人物对属性表进行字符匹配。
 
-    :param rdms_db: object.RDMS数据库连接对象
     :param event_id: string.事件id
     :param event_date: string.事件发生日期
     :param event_local: string.事件发生地点
@@ -98,7 +95,7 @@ def __check_event_attribute_by_char(rdms_db, event_id, event_date, event_local, 
     :return 字符匹配事件属性是否成功。若匹配成功则返回：True, 事件属性列表；若匹配失败则返回：False, None。
     """
     event_date = __date_formatter(event_date)
-    ebm_event_attributes = rdms_service.get_event_attribute(rdms_db, event_id, event_local, event_date, nentity_org,
+    ebm_event_attributes = rdms_service.get_event_attribute(event_id, event_local, event_date, nentity_org,
                                                             nentity_person)
     if ebm_event_attributes is not None and len(ebm_event_attributes) > 0:
         return True, ebm_event_attributes
@@ -140,10 +137,9 @@ def __check_event_info_by_nn(short_sentence, cameo):
         return True, result
 
 
-def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, content, event_tag, update_synonyms):
+def __parsed_sentence_and_insert2db(graph_db, content_id, content, event_tag, update_synonyms):
     """
     对传入的句子做事件抽取、组成成份分析、事件类型分析等，以及将分析结果入库。
-    :param rdms_db: object.关系数据库连接对象。
     :param graph_db: object.图数据库连接对象。
     :param fulltext_db: object.全文检索服务连接对象。
     :param content_id: String.文本id。
@@ -166,7 +162,7 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
     # 接口返回句子及其事件（主谓宾）
     for sentence_parsed in sentence_parsed_array:
         zh_sentence = sentence_parsed["sentence"]
-        content_id, sentence_id = rdms_service.insert_event_sentence(rdms_db, content_id, zh_sentence)
+        content_id, sentence_id = rdms_service.insert_event_sentence(content_id, zh_sentence)
         # 程序调用“关系抽取接口”，获取下标，与事件抽取的下标对比，存图数据库；
         # relextract_data = {"sentence": zh_sentence}
         # relextract_res = http_post(relextract_data, config.relextract_MM_interface_uri)
@@ -195,7 +191,7 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
             verb = ",".join(verb) if type(verb) == list else verb
             object = ",".join(object) if type(object) == list else object
             # 根据主语、谓语、宾语、否定词匹配事件表（字符匹配）
-            check_event_info, event_infos = __check_event_info_by_char(rdms_db, subject, verb, object, negative_word,
+            check_event_info, event_infos = __check_event_info_by_char(subject, verb, object, negative_word,
                                                                        update_synonyms)
             namedentity_location_str = ",".join(namedentity_location)
             namedentity_organization_str = ",".join(namedentity_organization)
@@ -208,21 +204,21 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
                     event_id = event_info['event_id']
                     logging.info("字符匹配事件成功，事件id为：" + event_id)
                     check_event_attribute, ebm_event_attributes = __check_event_attribute_by_char(
-                        rdms_db, event_id, event_datetime, event_location,
+                        event_id, event_datetime, event_location,
                         namedentity_organization, namedentity_person)
                     # 若字符属性匹配成功，意味着该事件已经存在，仅仅记录句子与这些属性的关系
                     if check_event_attribute:
                         for event_attribute in ebm_event_attributes:
                             attribute_id = event_attribute['relation_id']
-                            rdms_service.insert_sentattribute_rel(rdms_db, short_sentence, attribute_id, sentence_id)
+                            rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
                     else:
                         # 若字符属性匹配失败，则认为该事件为新事件，记录到事件属性表、事件句子属性关系表
-                        attribute_id = rdms_service.insert_event_attribute(rdms_db, sentiment_analysis,
+                        attribute_id = rdms_service.insert_event_attribute(sentiment_analysis,
                                                                            event_datetime, event_location, state,
                                                                            namedentity_location_str,
                                                                            namedentity_organization_str,
                                                                            namedentity_person_str, "", event_id)
-                        rdms_service.insert_sentattribute_rel(rdms_db, short_sentence, attribute_id, sentence_id)
+                        rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
                         # 若字符属性匹配失败，则进行NN网络属性匹配（NN网络属性匹配为空实现）
                         check_event_attribute = __check_event_attribute_by_nn(event_location, event_datetime,
                                                                               namedentity_organization,
@@ -234,7 +230,7 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
                             pass
             else:
                 # 字符事件匹配失败，则记录事件信息表、事件属性表、事件句子属性表、图数据库
-                event_id, event = __storage_new_event(rdms_db, subject, verb, object, short_sentence, cameo,
+                event_id, event = __storage_new_event(subject, verb, object, short_sentence, cameo,
                                                       triggerloc_index,
                                                       sentiment_analysis, event_datetime, negative_word, state,
                                                       event_location,
@@ -249,7 +245,7 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
                     copy_event_id = event_id
                     for event_info in event_infos:
                         event_id = event_info["event_id"]
-                        rdms_service.insert_event_copy(rdms_db, copy_event_id, event_id)
+                        rdms_service.insert_event_copy(copy_event_id, event_id)
                 else:
                     # 若NN事件匹配失败，则保存神经网络向量
                     data = {"short_sentence": short_sentence, "cameo": cameo, "event_id": event_id}
@@ -258,24 +254,24 @@ def __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, 
                     if response["status"] != 'success':
                         logging.warning("调用事件向量存储接口失败：" + response["message"])
     # 上面代码中出错后不需要回滚
-    rdms_db.commit()
+    # rdms_db.commit()
 
     return event_id_list, event_list
 
 
-def __storage_new_event(rdms_db, subject, verb, object, short_sentence, cameo, triggerloc_index, sentiment_analysis,
+def __storage_new_event(subject, verb, object, short_sentence, cameo, triggerloc_index, sentiment_analysis,
                         event_datetime, negative_word, state, event_local, event_location, event_organization,
                         event_person, graph_db, sentence_id, event_tag):
     # 11、接口生成事件id，并同主语、谓语、宾语、主谓宾构成的事件短语以及CAMEO编号存入“事件信息表”；
     # 接口生成属性id、事件生成日期，并同情感分析、事件发生日期、事件发生地点、事件否定词、事件发生状态、
     # 命名实体、句子id、事件id存入“事件与事件句子关系表”（事件属性表）；
     # 将属性id（事件属性表）、句子id（事件句子表）、存入“事件句子属性关系表”。
-    event_id = rdms_service.insert_event_info(rdms_db, subject, verb, object, short_sentence, cameo,
+    event_id = rdms_service.insert_event_info(subject, verb, object, short_sentence, cameo,
                                               triggerloc_index, negative_word)
     event_datetime = __date_formatter(event_datetime)
-    attribute_id = rdms_service.insert_event_attribute(rdms_db, sentiment_analysis, event_datetime, event_local, state,
+    attribute_id = rdms_service.insert_event_attribute(sentiment_analysis, event_datetime, event_local, state,
                                                        event_location, event_organization, event_person, "", event_id)
-    rdms_service.insert_sentattribute_rel(rdms_db, short_sentence, attribute_id, sentence_id)
+    rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
 
     # 12、程序将数据存储于图数据库，接口标识图中的事件节点为“Event”，并将事件id、事件短语、
     # 事件发生日期属性存储为事件节点，接口根据关系抽取出的实际关系标识图中的关系节点，并将关系中文名
@@ -296,19 +292,19 @@ def get_events_by_search_helper(search, event_tag, start_date, end_date):
      :return 图数据库中的事件节点数组，如：{"status": "success", "events": [{"event_sentence": "", "event_id": "", "event_date": ""}]}
      """
     # 2、程序调用“事件类型分析接口”，根据用户输入的搜索句子，接口返回用户输入句子的CAMEO编号数组；
-    data = {"sentence": search}
-    res = http_post(data, config.event_extract_uri)
-    response = json.loads(res)
-    sentence_parsed_array = response["data"]
-    if len(sentence_parsed_array) < 1:
-        return 'success', []
-    cameo_code_list = []
-    for sentence_parsed in sentence_parsed_array:
-        for event in sentence_parsed["events"]:
-            cameo_code = event["cameo"]
-            if cameo_code is None or cameo_code == '':
-                cameo_code = '000'
-            cameo_code_list.append(cameo_code)
+    # data = {"sentence": search}
+    # res = http_post(data, config.event_extract_uri)
+    # response = json.loads(res)
+    # sentence_parsed_array = response["data"]
+    # if len(sentence_parsed_array) < 1:
+    #     return 'success', []
+    # cameo_code_list = []
+    # for sentence_parsed in sentence_parsed_array:
+    #     for event in sentence_parsed["events"]:
+    #         cameo_code = event["cameo"]
+    #         if cameo_code is None or cameo_code == '':
+    #             cameo_code = '000'
+    #         cameo_code_list.append(cameo_code)
 
     # data = {"sentence": search}
     # res = http_post(data, config.constituency_parsed_uri)
@@ -322,27 +318,38 @@ def get_events_by_search_helper(search, event_tag, start_date, end_date):
     # cameo_code = res_dict["cameo_code"]
     # cameo_code = list(set(cameo_code))
     # cameo_code = ','.join(cameo_code)
-
-    # 3、程序调用“文本相似度匹配接口”得到匹配的事件。并根据每个事件的事件发生日期、CAMEO编号，与输入条件进行匹配过滤，
-    # 得到最终符合的事件清单，接口返回事件id数组；
     event_id_list = []
-    for cameo_code in cameo_code_list:
+    data = {"short_sentence": search, "threshold": config.event_similarly_threshold2}
+    res = http_post(data, config.event_similarly_uri)
+    response = json.loads(res)
+    if response["status"] != 'success':
+        logging.warning("调用事件相似度匹配接口失败，该事件搜索跳过：" + search)
+        return 'error', []
+    result = response["result"]
+    for item in result:
+        event_id_list.append(item["event_id"])
         if len(event_id_list) >= config.event_similarly_topN:
             break
-        data = {"short_sentence": search, "cameo": cameo_code, "threshold": config.event_similarly_threshold2}
-        res = http_post(data, config.event_similarly_uri)
-        response = json.loads(res)
-        if response["status"] != 'success':
-            logging.warning("调用事件相似度匹配接口失败，该事件搜索跳过：" + search)
-            return 'error', []
-        result = response["result"]
-        for item in result:
-            event_id_list.append(item["event_id"])
-            if len(event_id_list) >= config.event_similarly_topN:
-                break
-
-    if len(event_id_list) < 1:
-        return 'success', []
+    # 3、程序调用“文本相似度匹配接口”得到匹配的事件。并根据每个事件的事件发生日期、CAMEO编号，与输入条件进行匹配过滤，
+    # 得到最终符合的事件清单，接口返回事件id数组；
+    # event_id_list = []
+    # for cameo_code in cameo_code_list:
+    #     if len(event_id_list) >= config.event_similarly_topN:
+    #         break
+    #     data = {"short_sentence": search, "cameo": cameo_code, "threshold": config.event_similarly_threshold2}
+    #     res = http_post(data, config.event_similarly_uri)
+    #     response = json.loads(res)
+    #     if response["status"] != 'success':
+    #         logging.warning("调用事件相似度匹配接口失败，该事件搜索跳过：" + search)
+    #         return 'error', []
+    #     result = response["result"]
+    #     for item in result:
+    #         event_id_list.append(item["event_id"])
+    #         if len(event_id_list) >= config.event_similarly_topN:
+    #             break
+    #
+    # if len(event_id_list) < 1:
+    #     return 'success', []
 
     # data = {"search": search, "cameo_code": cameo_code, "start_date": start_date, "end_date": end_date}
     # res = http_post(data, config.fulltext_match_uri)
@@ -359,10 +366,9 @@ def get_events_by_search_helper(search, event_tag, start_date, end_date):
     return res_dict['status'], res_dict['events']
 
 
-def event_parsed_extract_helper(rdms_db, graph_db, fulltext_db, content, content_id, event_tag, update_synonyms):
+def event_parsed_extract_helper(graph_db, content, content_id, event_tag, update_synonyms):
     """
     对传入的文本进行分句，并根据句子中事件的关系进行不同的解析方式。
-    :param rdms_db: object.关系数据库连接对象。
     :param graph_db: object.图数据库连接对象。
     :param fulltext_db: object.全文检索服务连接对象。
     :param content_id: String.文本id。
@@ -397,7 +403,7 @@ def event_parsed_extract_helper(rdms_db, graph_db, fulltext_db, content, content
     # rdms_service.insert_zhcontent(rdms_db, content_id, content)
 
     # if not res_dict:
-    event_id_list, event_list = __parsed_sentence_and_insert2db(rdms_db, graph_db, fulltext_db, content_id, content,
+    event_id_list, event_list = __parsed_sentence_and_insert2db(graph_db, content_id, content,
                                                                 event_tag, update_synonyms)
     # if not content_id:
     #     continue

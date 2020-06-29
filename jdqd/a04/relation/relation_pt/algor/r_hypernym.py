@@ -25,7 +25,7 @@ keyword_rules = gen_keyword_rules()
 
 def rule101(sentence, keyword):
   # 匹配模式: ..., 是一种...
-  return pattern.rule_scks(sentence, keyword)
+  return pattern.rule_sckcs(sentence, keyword, comma2=False)
 
 
 def rule102(sentence, keyword):

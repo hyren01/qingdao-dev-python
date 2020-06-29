@@ -17,8 +17,8 @@ class Config(object):
         # url_event_extract = "http://172.168.0.115:38082/event_extract"
         self.url_event_extract = "http://127.0.0.1:8083/event_parsed_extract"
         # 提取关键词
-        self.url_relation_keywords = "http://172.168.0.115:12319/relation_keywords"
+        # self.url_relation_keywords = "http://172.168.0.115:12319/relation_keywords"
         # 拆分子句
-        self.url_relation_split = "http://172.168.0.115:12320/relation_split"
+        # self.url_relation_split = "http://172.168.0.115:12320/relation_split"
         # 事件关系预测
-        self.url_relation_classify = "http://172.168.0.115:12318/relation_classify"
+        # self.url_relation_classify = "http://172.168.0.115:12318/relation_classify"

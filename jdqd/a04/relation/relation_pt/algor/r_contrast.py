@@ -1,6 +1,5 @@
 from itertools import product
-import jdqd.a04.relation.relation_pt.algor.relation_util
-from jdqd.a04.relation.relation_pt.algor import pattern
+from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
 base_words = ['尽管', '虽然', '固然']
 contrast_words = ['但是', '然而', '可是', '但', '还是', '却']

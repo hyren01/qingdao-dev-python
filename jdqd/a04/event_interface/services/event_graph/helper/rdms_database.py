@@ -5,43 +5,15 @@ from jdqd.a04.event_interface.services.common.gener_id import gener_id_by_uuid
 from feedwork.database.database_wrapper import DatabaseWrapper
 from feedwork.database.enum.query_result_type import QueryResultType
 import feedwork.utils.DateHelper as date_util
-
-
-import psycopg2
-import psycopg2.extras
-import json
+from feedwork.utils import logger
 
 config = Config()
 
 
-# class Database(object):
-
-def __init__(self):
-    self.host = config.db_host
-    self.port = config.db_port
-    self.db = config.db_name
-    self.user = config.db_user
-    self.passwd = config.db_passwd
-
-
-def get_connection(self):
-    # 数据库连接
-    connect = psycopg2.connect(
-        host=self.host,
-        port=self.port,
-        database=self.db,
-        user=self.user,
-        password=self.passwd
-    )
-
-    return connect
-
-
-def insert_event_sentence(connect, article_id, event_sentence):
+def insert_event_sentence(article_id, event_sentence):
     """
     插入数据到“事件句子表”。
 
-    :param connect: object.RDMS数据库连接对象
     :param article_id: string.文章编号
     :param event_sentence: string.事件句子
     :return 文本编号、句子编号。
@@ -55,6 +27,7 @@ def insert_event_sentence(connect, article_id, event_sentence):
         # cursor = connect.cursor()
         db.execute("INSERT INTO ebm_event_sentence(sentence_id, event_sentence, article_id) VALUES "
                    "(%s, %s, %s)", (sentence_id, event_sentence, article_id))
+        db.commit()
     except Exception as e:
         db.rollback()
         raise RuntimeError(e)
@@ -63,11 +36,10 @@ def insert_event_sentence(connect, article_id, event_sentence):
     return article_id, sentence_id
 
 
-def insert_event_info(connect, subject, verb, object, shorten_sentence, cameo_code, triggerloc_index, event_negaword):
+def insert_event_info(subject, verb, object, shorten_sentence, cameo_code, triggerloc_index, event_negaword):
     """
     插入数据到“事件信息表”。
 
-    :param connect: object.RDMS数据库连接对象
     :param subject: string.主语
     :param verb: string.谓语
     :param object: string.宾语
@@ -85,6 +57,7 @@ def insert_event_info(connect, subject, verb, object, shorten_sentence, cameo_co
         db.execute("INSERT INTO ebm_event_info(event_id, subject, verb, object, shorten_sentence, cameo_id, "
                    "triggerloc_index, event_negaword) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                    (event_id, subject, verb, object, shorten_sentence, cameo_code, triggerloc_index, event_negaword))
+        db.commit()
     except Exception as e:
         db.rollback()
         raise RuntimeError(e)
@@ -94,11 +67,10 @@ def insert_event_info(connect, subject, verb, object, shorten_sentence, cameo_co
     return event_id
 
 
-def insert_event_copy(connect, copy_event_id, event_id):
+def insert_event_copy(copy_event_id, event_id):
     """
     插入数据到“事件信息镜像校验表”。
 
-    :param connect: object.RDMS数据库连接对象
     :param copy_event_id: string.镜像事件编号
     :param event_id: string.事件编号
     :return 镜像id。
@@ -118,12 +90,11 @@ def insert_event_copy(connect, copy_event_id, event_id):
     return copy_id
 
 
-def insert_event_attribute(connect, sentiment_analysis, event_date, event_local, event_state, nentity_place,
+def insert_event_attribute(sentiment_analysis, event_date, event_local, event_state, nentity_place,
                            nentity_org, nentity_person, nentity_misc, event_id):
     """
     插入数据到“事件属性表”。
 
-    :param connect: object.RDMS数据库连接对象
     :param sentiment_analysis: string.情感分析
     :param event_date: string.事件发生日期
     :param event_local: string.事件发生地点
@@ -148,13 +119,14 @@ def insert_event_attribute(connect, sentiment_analysis, event_date, event_local,
         nentity_org = str(nentity_org).replace("'", "\"")
         nentity_person = str(nentity_person).replace("'", "\"")
         attritute_id = gener_id_by_uuid()
-        create_date = date_util.sys_datetime("%Y-%m-%d %H:%M:%S")
+        create_date = date_util.sys_datetime("%Y-%m-%d")
         # cursor = connect.cursor()
         db.execute("INSERT INTO ebm_eventsent_rel(relation_id, sentiment_analysis, event_date, event_local, "
                    "event_state, nentity_place, nentity_org, nentity_person, nentity_misc, "
                    "create_date, event_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                    (attritute_id, sentiment_analysis, event_date, event_local, event_state, nentity_place,
                     nentity_org, nentity_person, nentity_misc, create_date, event_id))
+        db.commit()
     except Exception as e:
         db.rollback()
         raise RuntimeError(e)
@@ -164,11 +136,10 @@ def insert_event_attribute(connect, sentiment_analysis, event_date, event_local,
     return attritute_id
 
 
-def insert_sentattribute_rel(connect, shorten_ssentence, attribute_id, sentence_id):
+def insert_sentattribute_rel(shorten_ssentence, attribute_id, sentence_id):
     """
     插入数据到“事件句子属性关系表”。
 
-    :param connect: object.RDMS数据库连接对象
     :param shorten_ssentence: string.事件原始短语。该数据在事件归并时才有效，用于记录相似事件的事件短语。
     :param attribute_id: string.情感分析
     :param sentence_id: string.事件发生日期
@@ -180,6 +151,7 @@ def insert_sentattribute_rel(connect, shorten_ssentence, attribute_id, sentence_
         # cursor = connect.cursor()
         db.execute("INSERT INTO ebm_sentattribute_rel(rel_id, shorten_ssentence, relation_id, sentence_id) VALUES "
                    "(%s, %s, %s, %s)", (rel_id, shorten_ssentence, attribute_id, sentence_id))
+        db.commit()
     except Exception as e:
         db.rollback()
         raise RuntimeError(e)
@@ -189,11 +161,10 @@ def insert_sentattribute_rel(connect, shorten_ssentence, attribute_id, sentence_
     return rel_id
 
 
-def get_cameoinfo_by_id(connect, event_id):
+def get_cameoinfo_by_id(event_id):
     """
     根据事件id查询该事件的CAMEO信息。
 
-    :param connect: object.RDMS数据库连接对象
     :param event_id: string.事件id
     :return CAMEO详细信息。
     """
@@ -213,11 +184,10 @@ def get_cameoinfo_by_id(connect, event_id):
     return result
 
 
-def get_sentence_attributes_by_id(connect, event_id):
+def get_sentence_attributes_by_id(event_id):
     """
     根据事件id查询该事件的详细信息。
 
-    :param connect: object.RDMS数据库连接对象
     :param event_id: string.事件id
     :return 事件的详细信息。
     """
@@ -237,11 +207,10 @@ def get_sentence_attributes_by_id(connect, event_id):
     return result
 
 
-def get_article_info_by_id(connect, event_id):
+def get_article_info_by_id(event_id):
     """
     根据事件id查询该事件的文章信息。
 
-    :param connect: object.RDMS数据库连接对象
     :param event_id: string.事件id
     :return 事件的文章信息。
     """
@@ -263,11 +232,10 @@ def get_article_info_by_id(connect, event_id):
     return result
 
 
-def get_synonym(connect):
+def get_synonym():
     """
     查询“同义词表”获取同义词数据。
 
-    :param connect: object.RDMS数据库连接对象
     :return 同义词数据。
     """
     db = DatabaseWrapper()
@@ -284,26 +252,24 @@ def get_synonym(connect):
     return result
 
 
-def get_event_info(connect, subject, verb, object, event_negaword):
+def get_event_info(subject, verb, object, event_negaword):
     """
     根据主语、谓语、宾语查询“事件信息表”。
 
-    :param connect: object.RDMS数据库连接对象
-    :param subject: string.主语
-    :param verb: string.谓语
-    :param object: string.宾语
+    :param subject: array.主语
+    :param verb: array.谓语
+    :param object: array.宾语
     :param event_negaword: string.同义词
     :return 事件信息表数据。
     """
     db = DatabaseWrapper()
     try:
         # cursor = connect.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        subject = ','.join("'{}'".format(item) for item in subject)
-        verb = ','.join("'{}'".format(item) for item in verb)
-        object = ','.join("'{}'".format(item) for item in object)
-        sql = f"SELECT * FROM ebm_event_info WHERE subject IN ({subject}) AND verb IN ({verb}) AND object IN ({object}) " \
-              f"AND event_negaword = '{event_negaword}'"
-        result = db.query(sql, (), QueryResultType.JSON)
+        sql = f"SELECT * FROM ebm_event_info WHERE subject IN %s AND verb IN %s " \
+              f"AND object IN %s AND event_negaword = %s"
+        logger.info(sql)
+        result = db.query(sql, (tuple(subject), tuple(verb), tuple(object), event_negaword),
+                          QueryResultType.JSON)
         # cursor.execute(sql)
         # result = cursor.fetchall()
         # result = json.loads(json.dumps(result))
@@ -315,11 +281,10 @@ def get_event_info(connect, subject, verb, object, event_negaword):
     return result
 
 
-def get_event_attribute(connect, event_id, event_local, event_date, nentity_org, nentity_person):
+def get_event_attribute(event_id, event_local, event_date, nentity_org, nentity_person):
     """
     根据事件id及事件发生地点、组织机构、人物查询事件信息，主要用于验证是否有重复事件。
 
-    :param connect: object.RDMS数据库连接对象
     :param event_id: string.事件id
     :param event_local: string.事件发生地点
     :param event_date: string.事件发生日期
@@ -327,29 +292,33 @@ def get_event_attribute(connect, event_id, event_local, event_date, nentity_org,
     :param nentity_person: list.命名实体-人物
     :return 事件信息表数据。
     """
-    check_sql = "SELECT * FROM ebm_eventsent_rel WHERE event_id = '{event_id}' AND event_local = '{event_local}' " \
-                "AND event_date = '{event_date}'".format(event_id=event_id, event_local=event_local,
-                                                         event_date=event_date)
-    for org in nentity_org:
-        check_sql = check_sql + " AND (nentity_org LIKE '%,{nentity_org}%' OR nentity_org LIKE '%{nentity_org},%' OR " \
-                                "nentity_org = '{nentity_org}')".format(nentity_org=org)
-    for person in nentity_person:
-        check_sql = check_sql + " AND (nentity_person LIKE '%,{nentity_person}%' OR nentity_person LIKE " \
-                                "'%{nentity_person},%' OR nentity_person = '{nentity_person}')" \
-            .format(nentity_person=person)
-    cursor = connect.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute(check_sql)
-    result = cursor.fetchall()
-    result = json.loads(json.dumps(result))
+    db = DatabaseWrapper()
+    try:
+        check_sql = f"SELECT * FROM ebm_eventsent_rel WHERE event_id = '{event_id}' " \
+                    f"AND event_local = '{event_local}' " \
+                    f"AND event_date = '{event_date}'"
+        for org in nentity_org:
+            check_sql = check_sql + f" AND (nentity_org LIKE '%%,{org}%%' " \
+                                    f"OR nentity_org LIKE '%%{org},%%' OR " \
+                                    f"nentity_org = '{org}')"
+        for person in nentity_person:
+            check_sql = check_sql + f" AND (nentity_person LIKE '%%,{person}%%' " \
+                                    f"OR nentity_person LIKE '%%{person},%%' " \
+                                    f"OR nentity_person = '{person}')"
+        result = db.query(check_sql, (), QueryResultType.JSON)
+    except Exception as e:
+        db.rollback()
+        raise RuntimeError(e)
+    finally:
+        db.close()
 
     return result
 
 
-def insert_zhcontent(connect, article_id, content):
+def insert_zhcontent(article_id, content):
     """
     插入数据到“t_article_msg_zh”表。
 
-    :param connect: object.RDMS数据库连接对象
     :param article_id: string.文章id
     :param content: string.文本内容
     """
@@ -364,11 +333,10 @@ def insert_zhcontent(connect, article_id, content):
         db.close()
 
 
-def insert_corecontent(connect, article_id, content):
+def insert_corecontent(article_id, content):
     """
     插入数据到“t_article_msg_zh”表。
 
-    :param connect: object.RDMS数据库连接对象
     :param article_id: string.文章id
     :param content: string.文本内容
     """

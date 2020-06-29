@@ -3,7 +3,6 @@
 
 import json
 
-import psycopg2
 import solr
 from flask import Flask, g, Response, request
 from neo4j import GraphDatabase, basic_auth
@@ -23,22 +22,25 @@ gdb_driver = GraphDatabase.driver(config.neo4j_uri, auth=basic_auth(config.neo4j
 
 
 def get_gdb():
+    """
+    开启图数据库链接
+    """
     if not hasattr(g, 'neo4j_db'):
         g.neo4j_db = gdb_driver.session()
     return g.neo4j_db
 
 
-def get_db():
-    if not hasattr(g, 'postgres_db'):
-        g.postgres_db = psycopg2.connect(host=config.db_host, port=config.db_port, database=config.db_name,
-                                         user=config.db_user, password=config.db_passwd)
-    return g.postgres_db
+# def get_db():
+#     if not hasattr(g, 'postgres_db'):
+#         g.postgres_db = psycopg2.connect(host=config.db_host, port=config.db_port, database=config.db_name,
+#                                          user=config.db_user, password=config.db_passwd)
+#     return g.postgres_db
 
 
-def get_solr():
-    if not hasattr(g, 'solr'):
-        g.solr = solr.Solr(config.solr_uri)
-    return g.solr
+# def get_solr():
+#     if not hasattr(g, 'solr'):
+#         g.solr = solr.Solr(config.solr_uri)
+#     return g.solr
 
 
 # @app.route("/create_events", methods=['POST'])
@@ -166,15 +168,15 @@ def get_eventdetail_by_id():
         return {"status": "error"}
     else:
         # 2、程序“调用RDMS数据库查询接口”，在RDMS数据库中根据事件id查询出文章详细信息数组以及事件详情数组；
-        connect = get_db()
+        # connect = get_db()
 
-        event_and_cameo_info = rdms_service.get_cameoinfo_by_id(connect, event_id)
+        event_and_cameo_info = rdms_service.get_cameoinfo_by_id(event_id)
         if len(event_and_cameo_info) < 1:
             event_and_cameo_info = ""
         else:
             event_and_cameo_info = event_and_cameo_info[0]
-        sentence_attributes = rdms_service.get_sentence_attributes_by_id(connect, event_id)
-        article_infos = rdms_service.get_article_info_by_id(connect, event_id)
+        sentence_attributes = rdms_service.get_sentence_attributes_by_id(event_id)
+        article_infos = rdms_service.get_article_info_by_id(event_id)
 
         return Response(json.dumps({"status": "success", "cameo_info": event_and_cameo_info,
                                     "article_infos": article_infos, "sentence_attributes": sentence_attributes}),
@@ -226,11 +228,10 @@ def event_parsed_extract():
     except KeyError:
         return {"status": "error"}
     else:
-        rdms_db = get_db()
+        # rdms_db = get_db()
         graph_db = get_gdb()
-        fulltext_db = get_solr()
-        success, event_id_list, event_list = event_helper.event_parsed_extract_helper(rdms_db, graph_db, fulltext_db,
-                                                                                      content,
+        # fulltext_db = get_solr()
+        success, event_id_list, event_list = event_helper.event_parsed_extract_helper(graph_db, content,
                                                                                       content_id, event_tag,
                                                                                       update_synonyms)
         if success:

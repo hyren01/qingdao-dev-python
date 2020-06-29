@@ -1,5 +1,4 @@
 import json
-import time
 from feedwork.database.database_wrapper import DatabaseWrapper
 
 
@@ -12,18 +11,14 @@ def insert_event_relations(keyword, left, right, event_pairs, rst, code, sentenc
             db.execute(f"insert into event_relations(sentence_id,relation_type ,"
                        f" words, left_sentence, right_sentence, event_source, event_target)"
                        f"values(%s,%s,%s,%s,%s,%s,%s)", (
-                           sentence_id, code, json.dumps(keyword, ensure_ascii=False),
-                           json.dumps(left, ensure_ascii=False),
-                           json.dumps(right, ensure_ascii=False), json.dumps(event_pairs, ensure_ascii=False),
-                           json.dumps(rst, ensure_ascii=False)))
+                           sentence_id, code, keyword, left, right, event_pairs, rst))
         elif code == 4:
             for i in range(len(rst)):
                 db.execute(f"insert into event_relations(sentence_id,relation_type,words,"
                            f"left_sentence, right_sentence, event_source, event_target,relation,"
                            f"event_source_id,event_target_id)"
                            f"values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (
-                               sentence_id, code, json.dumps(keyword, ensure_ascii=False),
-                               json.dumps(left, ensure_ascii=False), json.dumps(right, ensure_ascii=False),
+                               sentence_id, code, keyword, left, right,
                                rst[i]['event_pair'][0], rst[i]['event_pair'][1], rst[i]['relation'],
                                rst[i]['event_id_pair'][0], rst[i]['event_id_pair'][1]))
         db.commit()
@@ -32,7 +27,6 @@ def insert_event_relations(keyword, left, right, event_pairs, rst, code, sentenc
         raise RuntimeError(f"{sentence_id},ex.msg={ex}")
     finally:
         db.close()
-
 
 # def update(article_id):
 #     db = DatabaseWrapper()

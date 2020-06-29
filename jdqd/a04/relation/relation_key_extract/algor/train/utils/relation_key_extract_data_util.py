@@ -72,7 +72,7 @@ def Vector2Id(tags):
         result.append(np.argmax(tag))
     return result
 
-def Id2Label(ids):
+def Id2Label(ids, _label):
     """
     Id标签序列转换Label标签序列
     :param ids: Id标签序列

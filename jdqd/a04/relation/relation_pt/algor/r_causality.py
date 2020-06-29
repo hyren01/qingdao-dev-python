@@ -1,5 +1,5 @@
 from itertools import product
-from jdqd.a04.relation.relation_pt.algor import pattern
+from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
 # TODO(zhxin): 处理关系字组成其他常用词的情况
 neg_words = ['不', '不曾', '不会', '并不会', '不可', '不可以', '不可能', '不能', '不能够', '避免', '没有', '并没有']

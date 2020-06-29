@@ -1,4 +1,9 @@
 # coding=utf-8
+"""
+@Author: zhang xin
+@Time: 2020/6/16 10:38
+desc:
+"""
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.externals import joblib
@@ -37,7 +42,9 @@ def get_events_set(events_p):
 
 def events_one_hot(events_p, events_set):
     """
-    将事件列表转化成one-hot形式表示的矩阵
+    将事件列表转化成one-hot形式表示的矩阵。one-hot处理指的是，使用重且排序的事件类型列表（如：[0,1,2]），
+    与原始事件类型列表数据（如：[1,2,0,1,1]）进行数据转换操作，转换后的结果是[[0,1,0],[0,0,1],[1,0,0],[0,1,0],[0,1,0]]，
+    这是模型使用时需要的数据
       Args:
         events_p: 无事件用 0 补全后的事件列表
         events_set: 去重排序后的事件集合
@@ -204,8 +211,7 @@ def get_event_num(outputs, events_set):
     return events_num
 
 
-def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len,
-                             dates, pred_start_date, pred_end_date):
+def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dates, pred_start_date, pred_end_date):
     """
     获取起始-终止预测日期内对应的输入数据及输出数据
     Args:
@@ -231,12 +237,10 @@ def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len,
     max_input_start_row = input_end_row_to_start_row(max_input_end_row, input_len)
 
     inputs = [gen_input_by_input_start_row(values_pca, start_row, input_len)
-              for start_row in
-              range(min_input_start_row, max_input_start_row + 1)]
+              for start_row in range(min_input_start_row, max_input_start_row + 1)]
 
-    outputs = [
-      gen_output_by_input_start_row(events_p_oh, start_row, input_len, output_len)
-      for start_row in range(min_input_start_row, max_input_start_row + 1)]
+    outputs = [gen_output_by_input_start_row(events_p_oh, start_row, input_len, output_len)
+               for start_row in range(min_input_start_row, max_input_start_row + 1)]
 
     return np.array(inputs), np.array(outputs)
 

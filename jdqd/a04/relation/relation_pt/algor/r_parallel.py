@@ -1,5 +1,4 @@
 from itertools import product
-import jdqd.a04.relation.relation_pt.algor.relation_util as ru
 from jdqd.a04.relation.relation_pt.algor import pattern
 
 repeat_words = ['一边是', '一边', '有的是', '有的', '有时候', '有时', '一会儿', '一会', '一面', '也']
@@ -22,54 +21,50 @@ keyword_rules = {'rule101': parallel_pairs,
 
 
 def rule101(sentence, sub_sentences):
-  # 匹配模式: ...一边..., 一边...
-  return pattern.rule_skscks(sentence, sub_sentences, parallel_pairs)
+    # 匹配模式: ...一边..., 一边...
+    return pattern.rule_skscks(sentence, sub_sentences, parallel_pairs)
 
 
 def rule102(sentence, sub_sentences):
-  # 匹配模式: ...一边...一边...
-  return pattern.rule_skscks(sentence, sub_sentences, parallel_pairs,
-                             comma=False)
+    # 匹配模式: ...一边...一边...
+    return pattern.rule_skscks(sentence, sub_sentences, parallel_pairs,
+                               comma=False)
 
 
 def rule103(sentence, sub_sentences):
-  # 匹配模式: 一边...一边...
-  match_mode = 'short'
-  return pattern.rule_kscks(sentence, sub_sentences, parallel_pairs)
+    # 匹配模式: 一边...一边...
+    match_mode = 'short'
+    return pattern.rule_kscks(sentence, sub_sentences, parallel_pairs)
 
 
 def rule104(sentence, sub_sentences):
-  # 匹配模式: 一边...一边...
-  match_mode = 'short'
-  return pattern.rule_kscks(sentence, sub_sentences, parallel_pairs,
-                            comma=False)
+    # 匹配模式: 一边...一边...
+    match_mode = 'short'
+    return pattern.rule_kscks(sentence, sub_sentences, parallel_pairs,
+                              comma=False)
 
 
 def rule201(sentence, sub_sentences):
-  # 匹配模式: ..., 同时, ...
-  return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs)
+    # 匹配模式: ..., 同时, ...
+    return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs)
 
 
 def rule202(sentence, sub_sentences):
-  # 匹配模式: ..., 同时...
-  return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
-                            comma2=False)
+    # 匹配模式: ..., 同时...
+    return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
+                              comma2=False)
 
 
 def rule203(sentence, sub_sentences):
-  # 匹配模式: ...同时, ...
-  return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
-                            comma1=False)
+    # 匹配模式: ...同时, ...
+    return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
+                              comma1=False)
 
 
 def rule204(sentence, sub_sentences):
-  # 匹配模式: ...同时 ...
-  return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
-                            comma1=False, comma2=False)
-
-
-def extract(full_sentence, sub_sentences):
-  return ru.extract(full_sentence, sub_sentences, rules)
+    # 匹配模式: ...同时 ...
+    return pattern.rule_sckcs(sentence, sub_sentences, parallel_pairs,
+                              comma1=False, comma2=False)
 
 
 rules = [rule101, rule102, rule103, rule104, rule201, rule202, rule203, rule204]
@@ -83,5 +78,3 @@ rules_keyword_pos = {'rule101': None,
                      'rule203': None,
                      'rule204': None
                      }
-
-

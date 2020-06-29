@@ -1,6 +1,6 @@
 from jdqd.a04.relation.relation_pt.algor import relation_combine
 from jdqd.a04.relation.relation_pt.algor import r_causality, r_assumption, \
-    r_condition, pattern
+    r_condition, pattern, relation_util
 
 relations = [r_causality, r_assumption, r_condition]
 
@@ -21,6 +21,8 @@ def split_by_relations(sentence, keyword, keyword_pos):
     """
     for r in relations:
         split_rst, __ = split_by_relation(r, sentence, keyword, keyword_pos)
+        if not split_rst:
+            continue
         left = split_rst['left']
         right = split_rst['right']
         if left and right:
@@ -115,6 +117,12 @@ def split_single_keyword(sentence, keyword, min_sentences, delimiters,
 
 
 def split(sentence, keyword):
+    """
+
+    :param sentence:
+    :param keyword:
+    :return:
+    """
     keyword_num = len(keyword)
     min_sentences, delimiters = relation_util.split_sentence(sentence)
     if keyword_num == 2:
@@ -123,15 +131,22 @@ def split(sentence, keyword):
         keyword_pos = relation_util.get_keyword_pos(min_sentences, keyword[0])
     split_rst = split_by_relations(sentence, keyword, keyword_pos)
     if split_rst:
-        return split_rst, 'r'
+        return split_rst
 
     if keyword_num > 1:
         split_rst = split_multi_keywords(sentence, keyword)
         if split_rst:
-            return split_rst, 'm'
+            return split_rst
     else:
         split_rst = split_single_keyword(sentence, keyword, min_sentences,
                                          delimiters, keyword_pos)
         if split_rst:
-            return split_rst, 's'
-    return [], ''
+            return split_rst
+    return []
+
+
+if __name__ == '__main__':
+    s = '解放拉萨当戳就分开三大发大嫂, 范隆达 发送打开所以就分开打三发送带'
+    kw = '所以'
+    rst = split(s, kw)
+    print(rst)

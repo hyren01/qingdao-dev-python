@@ -13,9 +13,13 @@ from keras.optimizers import Adam
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 from jdqd.common.relation_com.model_utils import generate_trained_model_path, get_bert_tokenizer
-from jdqd.a04.relation_extract.algor.train.utils.relation_extract_data_util import data_generator, get_data
+from jdqd.a04.relation.relation_extract.algor.train.utils.relation_extract_data_util import data_generator, get_data
 from feedwork.utils import logger
-import jdqd.a04.relation_extract.config.relation_extract_config as CONFIG
+import jdqd.a04.relation.relation_extract.config.relation_extract_config as CONFIG
+
+import tensorflow as tf
+g0 = tf.Graph()
+ss0 = tf.Session(graph=g0)
 
 # 创建训练后的保存路径,按照当前日期创建模型保存文件夹
 TRAINED_MODEL_PATH = generate_trained_model_path(CONFIG.trained_model_dir, CONFIG.trained_model_name)
@@ -34,20 +38,22 @@ def build_bert():
     return 模型对象
     """
     #加载bert模型主体
-    bert_model = load_trained_model_from_checkpoint(CONFIG.config_path, CONFIG.checkpoint_path, seq_len=None)  #加载预训练模型
-    for l in bert_model.layers:
-        l.trainable = True
+    with ss0.as_default():
+        with ss0.graph.as_default():
+            bert_model = load_trained_model_from_checkpoint(CONFIG.config_path, CONFIG.checkpoint_path, seq_len=None)  #加载预训练模型
+            for l in bert_model.layers:
+                l.trainable = True
 
-    x1_in = Input(shape=(None,))
-    x2_in = Input(shape=(None,))
+            x1_in = Input(shape=(None,))
+            x2_in = Input(shape=(None,))
 
-    x = bert_model([x1_in, x2_in])
-    x = Lambda(lambda x: x[:, 0])(x) # 取出[CLS]对应的向量用来做分类
-    p = Dense(3, activation='softmax')(x)
-    model = Model([x1_in, x2_in], p)
-    model.compile(loss='categorical_crossentropy',
-                  optimizer=Adam(1e-5),    #用足够小的学习率
-                  metrics=['accuracy'])
+            x = bert_model([x1_in, x2_in])
+            x = Lambda(lambda x: x[:, 0])(x) # 取出[CLS]对应的向量用来做分类
+            p = Dense(3, activation='softmax')(x)
+            model = Model([x1_in, x2_in], p)
+            model.compile(loss='categorical_crossentropy',
+                          optimizer=Adam(1e-5),    #用足够小的学习率
+                          metrics=['accuracy'])
     return model
 
 
@@ -87,7 +93,9 @@ class Evaluate(Callback):
             true_lists.append(np.argmax(test_line[i][2]))
             t1, t1_ = TOKENIZER.encode(first=test1, second=test2)
             T1, T1_ = np.array([t1]), np.array([t1_])
-            _prob = model.predict([T1, T1_])
+            with ss0.as_default():
+                with ss0.graph.as_default():
+                    _prob = model.predict([T1, T1_])
             prob = np.argmax(_prob)
             probs.append(prob)
 
@@ -109,7 +117,9 @@ def model_test(test_line):
             test2 = test_line[i][1]
             t1, t1_ = TOKENIZER.encode(first=test1, second=test2)
             T1, T1_ = np.array([t1]), np.array([t1_])
-            _prob = model.predict([T1, T1_])
+            with ss0.as_default():
+                with ss0.graph.as_default():
+                    _prob = model.predict([T1, T1_])
             prob = np.argmax(_prob)
             f.write(test1 + '\t' + test2 + '\t' + str(np.argmax(test_line[i][2])) + '\t' + str(prob) + '\n')
             
@@ -126,17 +136,18 @@ def model_train():
     evaluator = Evaluate()
     
     # 模型训练
-    model.fit_generator(
-    train_D.__iter__(),
-    steps_per_epoch=len(train_D),
-    epochs= CONFIG.epoch,
-    validation_data=valid_D.__iter__(),
-    validation_steps=len(valid_D),
-    verbose=1,
-    shuffle=True,
-    callbacks=[evaluator]
-    )   
-
+    with ss0.as_default():
+        with ss0.graph.as_default():
+            model.fit_generator(
+                                train_D.__iter__(),
+                                steps_per_epoch=len(train_D),
+                                epochs= CONFIG.epoch,
+                                validation_data=valid_D.__iter__(),
+                                validation_steps=len(valid_D),
+                                verbose=1,
+                                shuffle=True,
+                                callbacks=[evaluator]
+            )
     model_test(test_line)
     p, r, f1 = evaluator.evaluate()
     logger.info(f"f1:{f1}, precision:{p}, recall:{r}")

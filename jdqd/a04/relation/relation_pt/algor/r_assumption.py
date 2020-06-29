@@ -1,5 +1,5 @@
 from itertools import product
-from jdqd.a04.relation.relation_pt.algor import pattern
+from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
 
 def gen_keywords():

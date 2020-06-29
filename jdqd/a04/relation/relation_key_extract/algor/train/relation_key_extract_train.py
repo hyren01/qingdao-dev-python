@@ -16,10 +16,13 @@ from keras.preprocessing.sequence import pad_sequences
 from keras_bert import load_trained_model_from_checkpoint
 
 from jdqd.common.relation_com.model_utils import generate_trained_model_path, get_bert_tokenizer
-from jdqd.a04.relation_key_extract.algor.train.utils.relation_key_extract_data_util import get_label, get_data, Vector2Id, Id2Label
+from jdqd.a04.relation.relation_key_extract.algor.train.utils.relation_key_extract_data_util import get_label, get_data, Vector2Id, Id2Label
 from feedwork.utils import logger
-import jdqd.a04.relation_key_extract.config.relation_key_extract_config as CONFIG
+import jdqd.a04.relation.relation_key_extract.config.relation_key_extract_config as CONFIG
 
+import tensorflow as tf
+g0 = tf.Graph()
+ss0 = tf.Session(graph=g0)
 
 # 创建训练后的保存路径,按照当前日期创建模型保存文件夹
 TRAINED_MODEL_PATH = generate_trained_model_path(CONFIG.trained_model_dir, CONFIG.trained_model_name)
@@ -74,27 +77,28 @@ def build_model():
     #构建模型主体
     return 模型对象
     '''
-    bert = load_trained_model_from_checkpoint(CONFIG.config_path, CONFIG.checkpoint_path, seq_len=CONFIG.maxlen)
-    
-    #构造模型网络
-    for layer in bert.layers:
-        layer.trainable = True
-        
-    x1 = Input(shape=(None,))
-    x2 = Input(shape=(None,))
-    bert_out = bert([x1, x2])
-    lstm_out = Bidirectional(LSTM(CONFIG.lstmDim,
-                                     return_sequences=True,
-                                     dropout=0.2,
-                                     recurrent_dropout=0.2))(bert_out)
-    crf_out = CRF(len(label), sparse_target=True)(lstm_out)
-    model = Model([x1, x2], crf_out)
-    model.summary()
-    model.compile(
-        optimizer=Adam(1e-4),
-        loss=crf_loss,
-        metrics=[crf_accuracy]
-    )
+    with ss0.as_default():
+        with ss0.graph.as_default():
+            bert = load_trained_model_from_checkpoint(CONFIG.config_path, CONFIG.checkpoint_path, seq_len=CONFIG.maxlen)
+            #构造模型网络
+            for layer in bert.layers:
+                layer.trainable = True
+
+            x1 = Input(shape=(None,))
+            x2 = Input(shape=(None,))
+            bert_out = bert([x1, x2])
+            lstm_out = Bidirectional(LSTM(CONFIG.lstmDim,
+                                             return_sequences=True,
+                                             dropout=0.2,
+                                             recurrent_dropout=0.2))(bert_out)
+            crf_out = CRF(len(label), sparse_target=True)(lstm_out)
+            model = Model([x1, x2], crf_out)
+            model.summary()
+            model.compile(
+                optimizer=Adam(1e-4),
+                loss=crf_loss,
+                metrics=[crf_accuracy]
+            )
     return model
 
 model = build_model()
@@ -108,12 +112,14 @@ def extract_items(sentence):
     """
     sentence = sentence[:CONFIG.maxlen-1]
     labels, types = PreProcessInputData([sentence])
-    tags = model.predict([labels, types])[0]
+    with ss0.as_default():
+        with ss0.graph.as_default():
+            tags = model.predict([labels, types])[0]
     result = []
     for i in range(1, len(sentence) + 1):
         result.append(tags[i])
     result = Vector2Id(result)
-    tag = Id2Label(result)
+    tag = Id2Label(result, _label)
     return tag
 
     
@@ -271,15 +277,17 @@ def model_train():
     evaluator = Evaluate()
     
     # 模型训练
-    model.fit(x=[input_train_labels, input_train_types],
-                   y=result_train_pro,
-                   batch_size=CONFIG.batch_size,
-                   epochs=CONFIG.epochs,
-                   validation_data=[[input_test_labels, input_test_types], result_test_pro],
-                   verbose=1,
-                   shuffle=True,
-                   callbacks=[evaluator]
-                   )
+    with ss0.as_default():
+        with ss0.graph.as_default():
+            model.fit(x=[input_train_labels, input_train_types],
+                           y=result_train_pro,
+                           batch_size=CONFIG.batch_size,
+                           epochs=CONFIG.epochs,
+                           validation_data=[[input_test_labels, input_test_types], result_test_pro],
+                           verbose=1,
+                           shuffle=True,
+                           callbacks=[evaluator]
+                           )
     model_test(input_test)
     f1, precision, recall = evaluator.evaluate()
     logger.info(f"f1:{f1}, precision:{precision}, recall:{recall}")

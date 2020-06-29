@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""
+@Author: zhang xin
+@Time: 2020/6/16 10:38
+desc:
+"""
 import numpy as np
 
 from keras.layers import Input, LSTM, Dense
@@ -34,7 +39,6 @@ class SeqModel(object):
     def gen_samples(self, values_pca, events_p_oh, input_len, output_len, dates, pred_start_date, pred_end_date):
         """
           根据预测日期生成对应的输入与输出样本
-          # TODO 对于日期的选择（开始结束日期范围内）
         Args:
           values_pca: pca 降维操作后的数据
           events_p_oh: 按数据表补0的事件列表, one-hot形式
@@ -93,7 +97,8 @@ class SeqModel(object):
         return model, encoder_model, decoder_model
 
     def train(self, array_x, array_y, array_yin, model_sub_dir):
-        """训练模型并保存模型文件
+        """
+        训练模型并保存模型文件
         Args:
           array_x: encoder 的输入序列
           array_y: deocder 的输出序列
@@ -101,7 +106,8 @@ class SeqModel(object):
           model_sub_dir: 存放此次训练所生成的模型的目录
         """
         logger.info(f"Current value: 滞后期={self.n_in}, pca={self.pca_n}")
-
+        # x的shape是[样本数, encoder输入长度(即滞后期), 特征数]
+        # y的shape是[样本数, decoder输出长度(即预测天数), 输出事件类别个数]
         n_input = array_x.shape[2]
         n_output = array_y.shape[2]
         model, encoder, decoder = self.build_models(n_input, n_output)

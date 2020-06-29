@@ -1,12 +1,4 @@
 
-# def extract_all_keywords(sentence, rule, keywords):
-#   for k in keywords:
-#     rst = rule(sentence, k)
-#     if rst:
-#       return rst
-#   return {}
-
-
 def extract_all_rules(sentence, rules, keyword_rules):
     """
   使用某种关系下
