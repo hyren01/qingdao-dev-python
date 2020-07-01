@@ -3,7 +3,7 @@ from feedwork.database.database_wrapper import DatabaseWrapper
 from feedwork.database.enum.query_result_type import QueryResultType
 import re
 from feedwork.utils import FileHelper
-from jdqd.a04.relation.relation_pt.algor import r_then, r_causality
+from jdqd.a04.relation.relation_pt.algor import r_then, r_causality, r_contrast
 
 FileHelper.write('test_feedwork_file.txt', 'bbb')
 
@@ -96,4 +96,4 @@ if __name__ == '__main__':
     rst_articles = []
     for id_, content in articles_zh:
         rsts = extract_articles(content, r_causality)
-        rst_articles.append(rsts)
+        rst_articles.extend(rsts)

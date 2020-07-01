@@ -53,11 +53,14 @@ def vec_reader():
     :return: None
     """
     while True:
-
+        logger.info(f"READ_QUENE.get是否为空：{READ_QUENE.empty()}", f"是否已经满了{READ_QUENE.full()}")
         message, read_sub_queue = READ_QUENE.get()
+        logger.info("READ_QUENE.get完成！")
+        logger.info(f"READ_QUENE.get是否为空：{READ_QUENE.empty()}", f"是否已经满了{READ_QUENE.full()}")
+
         try:
             # 如果需要读取向量则开始读取
-            if message and message is not None:
+            if message:
                 # 加载字典文件
                 cameo2id = data_utils.read_json(pre_config.cameo2id_path)
                 # 获取所有的cameo号
@@ -65,11 +68,14 @@ def vec_reader():
                 # 一次只读取一个cameo对应的所有向量
                 for cameo in cameos:
                     data = load_vec.load_vec_data(cameo)
-                    # 将文件标题以及文章向量内容放入读取子队列中
+
+                    # 向量内容放入读取子队列中
+                    logger.info(f"read_sub_queue.put是否为空：{read_sub_queue.empty()}, 是否已经满了{read_sub_queue.full()}")
                     if cameo != cameos[-1]:
                         read_sub_queue.put((True, data))
                     else:
                         read_sub_queue.put((False, data))
+                    logger.info("read_sub_queue.put完成！")
             else:
                 continue
 
@@ -103,24 +109,25 @@ def event_match():
         # 相似度阈值
         threshold = request.form.get("threshold", type=float, default=0.5)
 
+    # 默认阈值为0.5
     if not threshold or threshold is None:
-
         threshold = 0.5
 
-    logger.info("获得前端请求信息！")
 
     # 匹配模块子队列
-    logger.info("开始创建匹配子队列。。。")
+    logger.info("开始创建match_sub_queue")
     match_sub_queue = Queue()
     # 将短句、cameo号、以及阈值传递给匹配模块
-    logger.info("将前端请求信息通过MATCH_QUEUE主队列传输给事件检索模块。。。")
-    logger.info("队列是否已经满了。。。", MATCH_QUEUE.full())
+    logger.info(f"MATCH_QUEUE.put是否为空：{MATCH_QUEUE.empty()}，是否已经满了{MATCH_QUEUE.full()}")
     MATCH_QUEUE.put((short_sentence, cameo, threshold, match_sub_queue))
-    logger.info("前端请求信息传输完成！")
+    logger.info("MATCH_QUEUE.put完成！")
+
     # 通过匹配模块获取匹配结果
-    logger.info("开始从匹配子队列获取事件检索结果。。。")
+    logger.info(f"match_sub_queue.get是否为空：{match_sub_queue.empty()}，是否已经满了{match_sub_queue.full()}")
     message, result = match_sub_queue.get()
-    logger.info("获取事件检索结果完成！")
+    logger.info("match_sub_queue.get完成！")
+    logger.info(f"match_sub_queue.get是否为空：{match_sub_queue.empty()}，是否已经满了{match_sub_queue.full()}")
+
 
     if message:
         return jsonify(status="success", result=result)
@@ -134,17 +141,19 @@ def match():
     :return: None
     """
     while True:
-        logger.info("MATCH_QUEUE事件检索主队列开始获取前端的请求信息。。。")
+        logger.info(f"MATCH_QUEUE.get是否为空:{MATCH_QUEUE.empty()},是否已满{MATCH_QUEUE.full()}")
         short_sentence, cameo, threshold, match_sub_queue = MATCH_QUEUE.get()
-        logger.info("请求信息获取完成，开始进行检索！")
+        logger.info("MATCH_QUEUE.get完成！")
+        logger.info(f"MATCH_QUEUE.get是否为空:{MATCH_QUEUE.empty()},是否已满{MATCH_QUEUE.full()}")
+
         try:
             # 判断短句是否为空
             judge("short_sentence", short_sentence)
 
             # 短句向量化
-            logger.info("事件检索模块开始对传入的短句进行向量化！")
+            logger.info("load_model.generate_vec。。。")
             main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
-            logger.info("事件检索模块请求事件向量化完成！")
+            logger.info("load_model.generate_vec完成！")
             # 最终的结果
             results = []
             # 判断是否全部遍历
@@ -153,11 +162,17 @@ def match():
                 # 文件读取子队列
                 read_sub_queue = Queue()
                 # 文件读取主队列
+                logger.info(f"READ_QUENE.put是否为空:{READ_QUENE.empty()},是否已满{READ_QUENE.full()}")
                 READ_QUENE.put((True, read_sub_queue))
+                logger.info("READ_QUENE.put完成！")
 
                 # 从向量
                 while True:
+                    logger.info(f"read_sub_queue.get是否为空:{read_sub_queue.empty()},是否已满{read_sub_queue.full()}")
                     status, data = read_sub_queue.get()
+                    logger.info("read_sub_queue.get完成！")
+                    logger.info(f"read_sub_queue.get是否为空:{read_sub_queue.empty()},是否已满{read_sub_queue.full()}")
+
                     if status:
                         for once in data:
                             score = load_model.vec_match(main_vec, data[once], MATCH_MODEL)
@@ -186,12 +201,18 @@ def match():
                     results.sort(key=lambda x: x["score"], reverse=True)
 
             # 将匹配结果返回给接口
+            logger.info(f"match_sub_queue.put是否为空:{match_sub_queue.empty()},是否已满{match_sub_queue.full()}")
             match_sub_queue.put((True, results))
+            logger.info("match_sub_queue.put完成！")
 
         except:
             trace = traceback.format_exc()
             logger.error(trace)
+
+            logger.info(f"EXCEPT:match_sub_queue.put是否为空:{match_sub_queue.empty()},是否已满{match_sub_queue.full()}")
             match_sub_queue.put((False, trace))
+            logger.info("EXCEPT:match_sub_queue.put完成！")
+
             continue
 
 
