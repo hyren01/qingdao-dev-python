@@ -53,7 +53,7 @@ class EventModel(object):
         return self._tables_name
 
     @tables_name.setter
-    def tables_name(self, tables_name: bool):
+    def tables_name(self, tables_name: str):
         self._tables_name = tables_name
 
     @property

@@ -86,10 +86,10 @@ def add_char(words, chars):
 
 def get_keyword_pos(min_sentences, keyword):
     """
-    获取关键词所在子句在子句列表中的下标. 子句列表由句子以标点符号分割得到
-    :param min_sentences: 由原句以标点符号分割得到的子句列表
+    获取关键词所在最小句子单元在最小句子单元列表中的下标. 最小句子单元列表由句子以标点符号分割得到
+    :param min_sentences: 由原句以标点符号分割得到的最小句子单元列表
     :param keyword:
-    :return: 关键词所在子句在子句列表中的下标.
+    :return: 关键词所在最小句子单元在最小句子单元列表中的下标.
     """
     min_sentence_num = len(min_sentences)
     for i, ms in enumerate(min_sentences):

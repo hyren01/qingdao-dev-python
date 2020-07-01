@@ -88,15 +88,26 @@ def restore_sentence(min_sentences, delimiters):
 
 def split_single_keyword(sentence, keyword, min_sentences, delimiters,
                          keyword_pos):
+    """
+    使用单个(e.g. ['因此'])而非一对(e.g. ['因为', '所以'])的关键词将句子拆分为左右句
+    :param sentence: 原句. 此处应已格式化(去除空白字符)
+    :param keyword: 由单个词语组成的关键词. list, 长度为1, e.g. ['因此']
+    :param min_sentences: 原句由标点拆分而成的各个最小句子单元列表
+    :param delimiters: 拆分最小句子列表时使用的分隔标点符号列表, 和 min_sentences
+    一起使用可还原原句
+    :param keyword_pos: 关键词所在的最小句子单元在最小句子单元中的下标
+    :return:
+    """
     min_sentences_num = len(min_sentences)
-
+    # 如果原句只有一个最小句子单元, 则直接使用关键词左右拆分. 会损失准确性.
     if min_sentences_num == 1:
         return [sentence.split(keyword[0])]
+    # 如果原句有两个最小句子单元, 则使用两个子句作为左右句. 会损失准确性.
     if min_sentences_num == 2:
         return [min_sentences]
 
     split_rsts = []
-    # 以keyword划分
+    # 关键词所在下标
     left = restore_sentence(min_sentences[:keyword_pos],
                             delimiters[:keyword_pos])
     right = restore_sentence(min_sentences[keyword_pos:],

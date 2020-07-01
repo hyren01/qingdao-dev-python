@@ -28,18 +28,6 @@ def one_hot_dict(events_set):
     return oh_dict
 
 
-def get_events_set(events_p):
-    """
-    获取排序后的事件列表
-      Args:
-        events_p: 无事件用 0 补全后的事件列表
-
-      Returns:
-        去重排序后的事件集合
-      """
-    return sorted(set(events_p))
-
-
 def events_one_hot(events_p, events_set):
     """
     将事件列表转化成one-hot形式表示的矩阵。one-hot处理指的是，使用重且排序的事件类型列表（如：[0,1,2]），

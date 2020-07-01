@@ -252,10 +252,11 @@ def coref_work():
 
         # 指代消解
         spacy_data = coref_spacy.coref_data(nlp, query)
-        # 对指代的内容进行分句，防止在翻译时因过长而报错
-        spacy_data = [f"{line}." for line in re.split("[？！?!.]", spacy_data) if line]
-        # en2zh， 将英文翻译成中文
-        spacy_data = "".join([transform_any_2_zh(once) for once in spacy_data])
+        # 使用spacy对指代消解句子进行分句
+        spacy_data = nlp(spacy_data)
+
+        # 对句子进行翻译并拼接成字符串
+        spacy_data = "".join([transform_any_2_zh(str(once)) for once in spacy_data.sents])
 
         # 将指代符替换成相应的国家
         if "SK" in spacy_data:

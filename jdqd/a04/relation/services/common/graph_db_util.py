@@ -12,11 +12,11 @@ def insert_graph_db(graph_db, rst):
             "RETURN CASE WHEN (n)-[]-(n1) THEN '1' ELSE '0' END AS result").data()
         logger.info(results)
         if not results:
-            insert(event_tag, i, relation_type, rst)
+            insert(graph_db, event_tag, i, relation_type, rst)
         else:
-            if results[0]['result'] == 0:
+            if results[0]['result'] == '0':
                 logger.info(results[0]['result'])
-                insert(event_tag, i, relation_type, rst)
+                insert(graph_db, event_tag, i, relation_type, rst)
 
 
 def insert(graph_db, event_tag, i, relation_type, rst):

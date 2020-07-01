@@ -7,15 +7,14 @@ desc:
 import os
 import feedwork.AppinfoConf as appconf
 from feedwork.utils import logger
-from jdqd.a03.event_pred.algor.train.train_model import SeqModel
+from feedwork.utils.FileHelper import cat_path
+from datetime import timedelta
+from jdqd.a03.event_pred.algor.train import train_model
 from jdqd.a03.event_pred.algor.common import preprocess
 from jdqd.a03.event_pred.algor.common import pgsql_util as pgsql, preprocess as pp
 from jdqd.a03.event_pred.algor.train import model_evalution as meval
 from jdqd.a03.event_pred.enum.model_status import ModelStatus
 from jdqd.a03.event_pred.bean.t_event_model import EventModel
-from feedwork.utils.DateHelper import sys_date, sys_time
-from feedwork.utils.FileHelper import cat_path
-from datetime import timedelta
 from jdqd.a03.event_pred.algor.common.model_util import load_models
 from jdqd.a03.event_pred.algor.predict.predict import predict_sample
 
@@ -48,6 +47,8 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
     pca_dir = models_dir
     sub_model_dirs = []
     sub_model_names = []
+    lag_dates = []
+    pcas = []
     outputs_list = []
     params_list = []
     try:
@@ -57,30 +58,27 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
             # 基于页面选择的开始日期、结束日期的整个范围中每一天作为一个基准日期，在该基准日期往前推max_input_len至min_input_len天
             # 的范围内每次间隔5天（10、15、20天）拉取数据训练模型。
             for j in range(event_model.delay_min_day, event_model.delay_max_day, 5):  # 滞后期的选择
-                # TODO SeqModel类可以去掉，里面的方法做成静态的方式
-                seq_model = SeqModel(j, event_model.days, event_model.neure_num, event_model.train_batch_no,
-                                     event_model.epoch, i)
-                sub_model_name = f'{event_model.model_name}-{seq_model.n_in}-{seq_model.n_out}-{seq_model.pca_n}'
+                logger.info(f"Current value: 滞后期={j}, pca={i}")
+                lag_dates.append(j)
+                pcas.append(i)
+                sub_model_name = f'{event_model.model_name}-{j}-{event_model.days}-{i}'
                 sub_model_names.append(sub_model_name)
                 sub_model_dir = cat_path(models_dir, sub_model_name)
                 if not os.path.exists(sub_model_dir):
                     os.mkdir(sub_model_dir)
                 sub_model_dirs.append(sub_model_dir)
-                array_x, array_y, array_yin = seq_model.gen_samples(values_pca, events_p_oh, j, event_model.days, dates,
-                                                                    event_model.tran_start_date,
-                                                                    event_model.tran_end_date)
+                array_x, array_y, array_yin = train_model.gen_samples(values_pca, events_p_oh, j, event_model.days,
+                                                                      dates, event_model.tran_start_date,
+                                                                      event_model.tran_end_date)
                 outputs_list.append(array_y)
                 params_list.append([j, event_model.days, i])
-                seq_model.train(array_x, array_y, array_yin, sub_model_dir)
+                train_model.train(event_model.train_batch_no, event_model.epoch, event_model.neure_num, array_x,
+                                  array_y, array_yin, sub_model_dir)
 
         logger.info('训练完成, 模型存入数据库')
 
-        # TODO 下面的一系列数据库操作不需要事务？
-        pgsql.model_train_done(event_model.model_id, sub_model_dirs)
-        # 子模型信息入库
-        detail_ids = pgsql.insert_into_model_detail(sub_model_names, event_model.model_id)
-        # 分事件模型信息入库
-        pgsql.insert_into_model_train(detail_ids, outputs_list, events_set, ModelStatus.SUCCESS.value)
+        detail_ids = pgsql.model_train_done(event_model.model_id, lag_dates, pcas, sub_model_dirs, sub_model_names,
+                                            outputs_list, events_set, ModelStatus.SUCCESS.value)
 
         return sub_model_dirs, params_list, detail_ids
     except Exception as e:
@@ -111,13 +109,15 @@ def evaluate_sub_models(model_id, data, dates, detail_ids, sub_model_dirs, param
     # 评估模型. scores: 子模型综合评分列表; events_num: 测试机事件个数
     scores, events_num = meval.evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh,
                                                    events_set, n_classes, eval_start_date, eval_end_date)
-    # TODO top模型的筛选和入库是两个主要步骤，不应该混在一起？
-    logger.info('模型评估结束, 筛选top模型')
-    pgsql.insert_model_tot(scores, events_num)
-    pgsql.model_eval_done(model_id, sys_date('%Y-%m-%d'), sys_time('%H:%M:%S'), ModelStatus.SUCCESS.value)
+
+    logger.info('模型评估结束, 筛选top模型并入库')
+    scores.sort(key=lambda x: x[0], reverse=True)
+    top_scores = scores[:min(10, len(scores))]
+
+    pgsql.model_eval_done(model_id, top_scores, events_num, ModelStatus.SUCCESS.value)
 
 
-def web_predict(model_id, data, dates, events_set, tables, task_id, pred_start_date):
+def web_predict(model_id, data, dates, events_set, task_id, pred_start_date):
     """
     # TODO 这个注释跟没写一样，下面的参数没更新
     通过页面传入的参数使用指定模型进行预测, 并将预测结果存入数据库.
@@ -126,40 +126,32 @@ def web_predict(model_id, data, dates, events_set, tables, task_id, pred_start_d
       data: 预测使用的模型 id
       dates: 预测使用的模型 id
       events_set: 预测使用的模型 id
-      tables: 预测使用的数据表列表
       task_id: 预测任务的 id
       pred_start_date: 开始预测日期, 即预测结果由此日期开始
     """
     try:
-        sub_model_results = pgsql.query_sub_models_by_model_id(model_id)
-        # 下标0: 子模型名称. 下标1: 子模型对应的 detail_id
-        sub_models = [r[0] for r in sub_model_results]
-        detail_ids = [r[1] for r in sub_model_results]
+        event_predict_array = pgsql.query_sub_models_by_model_id(model_id)
         # 事件类别数量(含0事件)
         num_classes = len(events_set)
 
         preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred, pred_detail_ids, last_date_data_pred = \
-            __predict_by_sub_models(data, dates, detail_ids, sub_models, pred_start_date, num_classes, task_id)
+            __predict_by_sub_models(data, dates, event_predict_array, pred_start_date, num_classes, task_id)
         if pred_detail_ids:
             pgsql.insert_pred_result(preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred,
                                      pred_detail_ids, events_set, task_id)
-        date_str = sys_date('%Y-%m-%d')
-        time_str = sys_time('%H:%M:%S')
-        pgsql.predict_task_done(task_id, date_str, time_str, last_date_data_pred, ModelStatus.SUCCESS.value)
-        logger.info(f"当前表 {','.join(tables)} 的模型预测完成")
+        pgsql.predict_task_done(task_id, last_date_data_pred, ModelStatus.SUCCESS.value)
     except Exception as e:
         pgsql.update_task_status(task_id, ModelStatus.FAILD.value)
         raise RuntimeError(e)
 
 
-def __predict_by_sub_models(data, dates, detail_ids, sub_models, pred_start_date, num_classes, task_id):
+def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_date, num_classes, task_id):
     """
     使用各个子模型进行预测。
     Args:
       data: 预测输入数据
       dates: 数据表日期列表
-      detail_ids: 子模型的 detail_id 列表
-      sub_models: 子模型的 存放路径列表
+      event_predict_array: array. EventPredict实体类，封装预测时需要用到的信息
       pred_start_date: 开始预测日期, 即此日期后均有预测结果
       num_classes: 事件类别数量
       task_id: 由页面传入
@@ -182,12 +174,16 @@ def __predict_by_sub_models(data, dates, detail_ids, sub_models, pred_start_date
     dates_pred_all = []
     dates_pred_data = []
     pred_detail_ids = []
-    predicted_detail_id_dates = pgsql.query_predicted_rsts(detail_ids, pred_start_date, task_id)
-    for detail_id, sub_model in zip(detail_ids, sub_models):
+    last_date_data_pred = None
+
+    for event_predict in event_predict_array:
+        sub_model = event_predict.model_name
         logger.info(f'正在使用模型{sub_model}进行预测')
-        # TODO 不能以解析文件名来获得滞后期
-        params = sub_model.split('-')[-3:]
-        input_len, output_len, n_pca = [int(p) for p in params]
+        input_len = event_predict.lag_date
+        output_len = event_predict.days
+        n_pca = event_predict.pca
+        detail_id = event_predict.event_predict
+
         model_dir = cat_path(models_dir, sub_model)
         values_pca = pp.apply_pca(n_pca, models_dir, data, True)
         inputs_test, output_dates = pp.gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
@@ -198,6 +194,7 @@ def __predict_by_sub_models(data, dates, detail_ids, sub_models, pred_start_date
 
         last_date_data_pred = dates_data[-1]
 
+        predicted_detail_id_dates = pgsql.query_predicted_rsts(event_predict.detail_id, pred_start_date, task_id)
         predicted_dates = predicted_detail_id_dates.get(detail_id)  # type of list of str
         if predicted_dates is None:
             latest_date_predicted = False

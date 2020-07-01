@@ -31,7 +31,7 @@ VEC_QUEUE = Queue(maxsize=5)
 # 事件删除主队列
 VEC_DELETE_QUEUE = Queue(maxsize=5)
 # 向量读取主队列
-READ_QUENE = Queue(maxsize=1)
+READ_QUENE = Queue(maxsize=5)
 
 
 def judge(name, data):
@@ -70,6 +70,9 @@ def vec_reader():
                         read_sub_queue.put((True, data))
                     else:
                         read_sub_queue.put((False, data))
+            else:
+                continue
+
         except:
             trace = traceback.format_exc()
             logger.error(trace)
@@ -104,12 +107,20 @@ def event_match():
 
         threshold = 0.5
 
+    logger.info("获得前端请求信息！")
+
     # 匹配模块子队列
+    logger.info("开始创建匹配子队列。。。")
     match_sub_queue = Queue()
     # 将短句、cameo号、以及阈值传递给匹配模块
+    logger.info("将前端请求信息通过MATCH_QUEUE主队列传输给事件检索模块。。。")
+    logger.info("队列是否已经满了。。。", MATCH_QUEUE.full())
     MATCH_QUEUE.put((short_sentence, cameo, threshold, match_sub_queue))
+    logger.info("前端请求信息传输完成！")
     # 通过匹配模块获取匹配结果
+    logger.info("开始从匹配子队列获取事件检索结果。。。")
     message, result = match_sub_queue.get()
+    logger.info("获取事件检索结果完成！")
 
     if message:
         return jsonify(status="success", result=result)
@@ -123,14 +134,17 @@ def match():
     :return: None
     """
     while True:
+        logger.info("MATCH_QUEUE事件检索主队列开始获取前端的请求信息。。。")
         short_sentence, cameo, threshold, match_sub_queue = MATCH_QUEUE.get()
-
+        logger.info("请求信息获取完成，开始进行检索！")
         try:
             # 判断短句是否为空
             judge("short_sentence", short_sentence)
 
             # 短句向量化
+            logger.info("事件检索模块开始对传入的短句进行向量化！")
             main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
+            logger.info("事件检索模块请求事件向量化完成！")
             # 最终的结果
             results = []
             # 判断是否全部遍历
@@ -159,7 +173,9 @@ def match():
 
             else:
                 # 加载数据
+                logger.info("scaning identied cameo file!")
                 data = load_vec.load_vec_data(cameo)
+                logger.info("identied cameo file is OK!")
                 # 如果data不为空则执行此处操作，否则就任务数据文件为空，这是第一条数据
                 if data:
                     for once in data:

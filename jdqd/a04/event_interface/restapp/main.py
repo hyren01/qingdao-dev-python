@@ -289,7 +289,7 @@ def get_article_info():
     """
     try:
         article_id = request.form.get('article_id')
-        event_id = request.args.getlist('event_id')
+        event_id = request.values.getlist('event_id')
     except KeyError:
         return {"status": "error"}
     else:

@@ -361,12 +361,15 @@ def get_article_list(event_id):
                                    f"join ebm_sentattribute_rel b on a.sentence_id=b.sentence_id "
                                    f"join ebm_eventsent_rel c on b.relation_id=c.relation_id "
                                    f"join ebm_event_info d on c.event_id=d.event_id "
-                                   f"where d.event_id in (%s)" % ','.join(['%s'] * len(event_id)), event_id)
-            article_id = article_ids.article_id
+                                   f"where d.event_id in (%s)" % ','.join(['%s'] * len(event_id)), event_id,
+                                   QueryResultType.PANDAS)
+            article_id_arr = []
+            for ids in article_ids.article_id:
+                article_id_arr.append(ids)
             # 查询文章信息
-            article = db.query("select article_id,translated_title,title from t_article_msg where article_id in (%s)",
-                               tuple(article_id),
-                               QueryResultType.JSON)
+            article = db.query(
+                "select article_id,title as translated_title,title from t_article_msg_zh where article_id in (%s)" % ','.join(
+                    ['%s'] * len(article_id_arr)), article_id_arr, QueryResultType.JSON)
             # 查询文章关联的事件，用于前端连线
             for a in article:
                 article_event = db.query(f"select distinct(a.event_id) from ebm_event_info a "
