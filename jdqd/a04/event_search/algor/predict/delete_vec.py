@@ -7,10 +7,10 @@
 """
 import os
 import numpy as np
-from jdqd.common.event_emm.data_utils import read_json, save_json
 from feedwork.utils import logger
 from feedwork.utils.FileHelper import cat_path
 import jdqd.a04.event_search.config.PredictConfig as pre_config
+from jdqd.a04.event_search.algor.predict import comm
 
 
 def execute_delete(event_id: str):
@@ -23,7 +23,7 @@ def execute_delete(event_id: str):
         logger.error(f"{pre_config.cameo2id_path} miss, can not exec delete!")
         raise FileNotFoundError
     # 读取保存事件{cameo:[event_id]}字典
-    cameo2id = read_json(pre_config.cameo2id_path)
+    cameo2id = comm.read_cameo2id(pre_config.cameo2id_path)
 
     # 判断事件是否在向量库中，如果存在则设置为1，并读取对应的向量并将其删除
     status = 0
@@ -37,7 +37,7 @@ def execute_delete(event_id: str):
             # 保存向量时的路径，只是比上边缺少了.npy,函数会自动补齐
             save_file_path = cat_path(pre_config.vec_data_dir, cameo)
             # 读取cameo保存的向量文件
-            x = np.load(read_file_path)
+            x = comm.read_np(read_file_path)
 
             # 删除向量
             temp = np.delete(x, list(cameo2id[cameo]).index(event_id), axis=0)
@@ -47,9 +47,9 @@ def execute_delete(event_id: str):
             # 将更新后的文件重新保存
             # cameo对应的向量没有删除完，cameo2id[cameo]也没有删完
             if temp.shape[0] and cameo2id[cameo]:
-                save_json(cameo2id, pre_config.cameo2id_path)
+                comm.save_cameo2id(cameo2id, pre_config.cameo2id_path)
                 # 将向量保存到文件中
-                np.save(save_file_path, temp)
+                comm.save_np(save_file_path, temp)
                 # 跳出循环
                 break
 
@@ -62,7 +62,7 @@ def execute_delete(event_id: str):
                 # 判断字典是否为空
                 if len(cameo2id):
                     # 字典不为空则重新保存
-                    save_json(cameo2id, pre_config.cameo2id_path)
+                    comm.save_cameo2id(cameo2id, pre_config.cameo2id_path)
                 else:
                     # 字典空了，则删除字典文件
                     os.remove(pre_config.cameo2id_path)

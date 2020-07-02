@@ -4,7 +4,7 @@ from jdqd.a04.relation.relation_pt.algor import pattern
 
 def gen_keywords():
     base_words = ['不仅仅', '不仅', '不光', '不但', '固然']
-    also_words = ['而且', '并且', '又', '还', '更是', '但更']
+    also_words = ['而且', '并且', '又', '更是', '但更']
     keywords = list(product(base_words, also_words))
     keywords_also = [[w] for w in also_words]
 

@@ -12,9 +12,11 @@ import feedwork.AppinfoConf as appconf
 from flask import request
 from feedwork.utils import logger
 from keras import backend as K
+from jdqd.a03.event_pred.enum.model_status import ModelStatus
 from jdqd.a03.event_pred.services.model_helper import train_over_hyperparameters, evaluate_sub_models, web_predict
 from jdqd.a03.event_pred.services.data_helper import combine_data, get_event
-from jdqd.a03.event_pred.algor.common.pgsql_util import query_teventmodel_by_id, query_teventtask_by_id
+from jdqd.a03.event_pred.algor.common.pgsql_util import query_teventmodel_by_id, query_teventtask_by_id, \
+    update_model_status, model_train_finish, update_task_status, predict_task_finish
 
 
 webApp = flask.Flask(__name__)
@@ -39,16 +41,18 @@ def build_model():
         date, data = combine_data(event_model.tables_name)
         events_set, events_p_oh = get_event(date, event_model.event_type)
         # 2、训练模型。根据PCA降维的特征选择以及max_input_len、min_input_len进行组合，每个组合都会训练出一个模型并且记录到数据库；
+        update_model_status(model_id, ModelStatus.PROCESSING.value)     # 模型状态修改为运行中
         sub_model_dirs, params_list, detail_ids = train_over_hyperparameters(data, date, events_set, events_p_oh,
                                                                              event_model)
         # 3、评估模型。对每个训练出的模型进行评估，评估结果记录到数据库。
-        evaluate_sub_models(model_id, data, date, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
+        evaluate_sub_models(data, date, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
                             event_model.evaluation_start_date, event_model.evaluation_end_date)
-
+        model_train_finish(model_id, ModelStatus.SUCCESS.value)     # 模型状态修改为完成/成功
         logger.info(f"当前模型id<{model_id}>的模型构建完成")
         return {"success": True, "model_path": sub_model_dirs}
     except Exception as e:
-        logger.error(f"表id {model_id} 训练发生异常：{traceback.format_exc()}")
+        logger.error(f"模型id {model_id} 训练发生异常：{traceback.format_exc()}")
+        model_train_finish(model_id, ModelStatus.FAILD.value)   # 模型状态修改为失败
         return {"success": False, "exception": e}
     finally:
         K.clear_session()
@@ -72,11 +76,15 @@ def model_predict():
         dates, data = combine_data(event_task.tables_name)
         events_set, events_p_oh = get_event(dates, event_task.event_type)
         # 2、模型预测。使用指定的模型及数据集进行预测，预测结果记录到数据库。
-        web_predict(event_task.model_id, data, dates, events_set, task_id, event_task.sample_start_date)
+        update_task_status(task_id, ModelStatus.PROCESSING.value)   # 任务状态修改为运行中
+        last_date_data_pred = web_predict(event_task.model_id, data, dates, events_set, task_id,
+                                          event_task.sample_start_date)
+        predict_task_finish(task_id, last_date_data_pred, ModelStatus.SUCCESS.value)    # 任务状态修改为完成/成功
         logger.info(f"模型id<{event_task.model_id}>的预测完成")
         return {"success": True}
     except Exception as e:
         logger.error(f"表 id {task_id} 预测发生异常：{traceback.format_exc()}")
+        predict_task_finish(task_id, "", ModelStatus.FAILD.value)   # 任务状态修改为失败
         return {"success": False, "exception": e}
     finally:
         K.clear_session()

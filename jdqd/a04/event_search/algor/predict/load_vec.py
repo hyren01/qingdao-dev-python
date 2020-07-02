@@ -6,11 +6,10 @@
 根据传入的cameo, 加载向量化后的事件向量
 """
 import os
-import json
-import numpy as np
 from feedwork.utils import logger
 from feedwork.utils.FileHelper import cat_path
 import jdqd.a04.event_search.config.PredictConfig as pre_config
+from jdqd.a04.event_search.algor.predict import comm
 
 
 def load_vec_data(cameo: str):
@@ -33,13 +32,11 @@ def load_vec_data(cameo: str):
         raise FileNotFoundError
 
     else:
-        with open(pre_config.cameo2id_path, "r", encoding="utf-8") as f:
-            cameo2id = f.read()
         # cameo2id 字典 {cameo:[]}
-        cameo2id = json.loads(cameo2id)
+        cameo2id = comm.read_cameo2id(pre_config.cameo2id_path)
 
         # 读取文件中的向量
-        x = np.load(read_file_path)
+        x = comm.read_np(read_file_path)
 
         logger.info(f"开始加载向量数据{read_file_path}。。。")
         for key, value in zip(cameo2id[cameo], x):

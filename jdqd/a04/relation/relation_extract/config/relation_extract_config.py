@@ -36,8 +36,6 @@ total_data_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, total_data_path)
 # 训练后测试集预测结果
 pred_path = 'relation_extract/test_pre/test_pred.txt'
 pred_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, pred_path)
-# 训练批次大小
-batch_size = 8
 # 循环
 epoch = 60
 #批次

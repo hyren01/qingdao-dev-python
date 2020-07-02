@@ -8,9 +8,10 @@ import numpy as np
 import jdqd.a03.event_pred.algor.common.pgsql_util as pgsql
 import feedwork.AppinfoConf as appconf
 from feedwork.utils import logger
-from jdqd.a03.event_pred.algor.common import preprocess as pp
-from jdqd.a03.event_pred.algor.predict import predict
 from feedwork.utils.FileHelper import cat_path
+from jdqd.a03.event_pred.algor.common import preprocess as pp
+from jdqd.a03.event_pred.algor.common.model_util import load_models
+from jdqd.a03.event_pred.algor.predict.predict import predict_sample
 from jdqd.a03.event_pred.enum.event_evalution_status import ModelEvalutionStatus
 
 model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, 'event_pred')
@@ -365,7 +366,8 @@ def pred(sub_model_dir, data, dates, events_p_oh, input_len, output_len, n_class
 
     inputs_test, outputs_test = pp.gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dates,
                                                             start_date, end_date)
-    preds = predict.predict(sub_model_dir, inputs_test, output_len, n_classes)
+    encoder, decoder = load_models(sub_model_dir)
+    preds = [predict_sample(encoder, decoder, inputs_sample, n_classes, output_len) for inputs_sample in inputs_test]
     preds = np.array(preds)
 
     return preds, outputs_test

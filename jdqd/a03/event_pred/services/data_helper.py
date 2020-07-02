@@ -6,6 +6,7 @@ desc:
 """
 import feedwork.AppinfoConf as appconf
 import numpy as np
+import pandas as pd
 from jdqd.a03.event_pred.algor.common.pgsql_util import query_data_table_2pandas, query_event_table_2pandas
 from jdqd.a03.event_pred.algor.common.preprocess import events_one_hot
 from jdqd.a03.event_pred.enum.event_type import EventType
@@ -17,7 +18,7 @@ super_event_type_col = __cfg_data.get('super_event_type_col')   # 大类事件�
 sub_event_type_col = __cfg_data.get('sub_event_type_col')   # 小类事件字段名
 event_table_name = __cfg_data.get('event_table_name')   # 用于训练及预测，在数据库中的数据表名（事件表）
 
-date_col = __cfg_data.get('date_col')      # 时间字段名
+date_col = __cfg_data.get('date_col')      # 时间字段名，仅在事件表中使用
 event_priority = __cfg_data['event_priority']
 
 none_event_flag = "0"   # 在有特征数据缺失事件类别的情况下填充的值
@@ -37,16 +38,16 @@ def combine_data(data_tables: str):
     # 列个数不允许超过1664个，所以把每张表分开查询
     data_tables = data_tables.split(",")
     for table in data_tables:
-        pandas_data = query_data_table_2pandas(table, date_col)
+        pandas_data = query_data_table_2pandas(table)
         # rksj这一列是固定需要删除的空列
         if 'rksj' in list(pandas_data):
             pandas_data = pandas_data.drop(columns=['rksj'])
         if join_data is None:
             join_data = pandas_data
         else:
-            join_data = join_data.join(pandas_data, on="rqsj", how="inner")
+            join_data = pd.merge(join_data, pandas_data, on="rqsj")
 
-    return __transform_df(join_data, date_col)
+    return __transform_df(join_data, "rqsj")
 
 
 def get_event(date, event_type):
@@ -73,7 +74,8 @@ def get_event(date, event_type):
 
 def __transform_df(df, date_col):
     """
-    对传入的dataframe进行统一日期格式、分离日期列与特征列、特征列数据转数值操作。
+    对传入的dataframe进行统一日期格式、分离日期列与特征列、特征列数据转数值操作。该方法会把date_col参数在dataframe
+    中删除，并且单独提取出date_col指定的列作为返回值。
     Args:
         df: dataframe. 数据库中的表
         date_col: string. 表中的时间字段名
@@ -85,13 +87,12 @@ def __transform_df(df, date_col):
     # 删除按照日期列进行排序
     # df = df.sort_values(by=date_col)
     # 单独提取出日期整列，得到Series对象
-    dates = df[date_col]
+    dates = df[date_col].astype('str')
     # 得到array对象
     dates = [__transform_date_str(date_str) for date_str in dates]
     # 提取出除日期列外的所有列数据，得到DataFrame对象
     data = df.drop(columns=[date_col])
-    data[data == None] = 0  # 将特征数据中为none的数据替换为0，
-    data = data.astype(int)
+    data = data.where(~data.isna(), other=0).astype(int)    # 将特征数据中为none的数据替换为0，并将所有特征转换为数值类型
 
     return dates, data
 
@@ -100,8 +101,15 @@ def __transform_date_str(date_str):
     if date_str is None or date_str == '':
         return
     date_str = date_str.split(" ")[0]  # 处理yyyy-MM-dd HH:mm:ss的情况，只要yyyy-MM-dd
-    # 尽可能将各种格式的日期格式转换为统一的yyyy-MM-dd格式
-    date_str = date_str.replace("年", "-").replace("月", "-").replace("日", " ").replace("/", "-").strip()
+    # 尽可能将各种格式的日期格式转换为统一的yyyy-MM-dd格式，日期数据存在yyyy-M的情况
+    date_str = date_str.replace("年", "-").replace("月", "-").replace("日", "").replace("/", "-").strip()
+    # pattern = re.compile(r'\d+')
+    # date_part = re.findall(pattern, date_str)
+    # date_part_len = len(date_part)
+    # yyyy = date_part[0] if date_part_len > 0 else ''
+    # # 若月份与日期字符长度为1则前补0，否则原样输出
+    # mm = (f'0{date_part[1]}'if len(date_part[1]) == 1 else date_part[1]) if date_part_len > 1 else ''
+    # dd = (f'0{date_part[2]}'if len(date_part[2]) == 1 else date_part[2]) if date_part_len == 3 else ''
 
     return date_str
 
@@ -146,7 +154,7 @@ def __get_dates_and_events(events_df, event_priority, event_col, date_col):
         date_event_dict.setdefault(__transform_date_str(row[date_col]), []).append(row[event_col])
     # 如果归并的数据中（events变量）的事件类别列表有多个，若event_priority（指定事件）存在则只保留该事件，
     # 否则取事件类别列表中的第一个事件
-    event_dtype = type(events_df[0][event_col])     # 取第一行event_col字段的数据，获得其数据类型
+    event_dtype = type(events_df.at[0, event_col])     # 取第一行event_col字段的数据，获得其数据类型
     for date, events in date_event_dict.items():
         # 若同一天内发生了多个事件，优先填入event_priority，否则只取第一个
         if len(events) > 1:

@@ -42,8 +42,6 @@ label_path = 'relation_key_extract/relation_key_extract_data/tag_dict.txt'
 label_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, label_path)
 #网络单元
 lstmDim = 64
-# 训练批次大小
-batch_size = 8
 # 循环
 epochs = 60
 #批次

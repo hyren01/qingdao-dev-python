@@ -8,18 +8,19 @@ import os
 import feedwork.AppinfoConf as appconf
 from feedwork.utils import logger
 from feedwork.utils.FileHelper import cat_path
-from datetime import timedelta
+from datetime import timedelta, datetime
 from jdqd.a03.event_pred.algor.train import train_model
 from jdqd.a03.event_pred.algor.common import preprocess
 from jdqd.a03.event_pred.algor.common import pgsql_util as pgsql, preprocess as pp
-from jdqd.a03.event_pred.algor.train import model_evalution as meval
-from jdqd.a03.event_pred.enum.model_status import ModelStatus
+from jdqd.a03.event_pred.algor.train.model_evalution import evaluate_sub_models as meval
 from jdqd.a03.event_pred.bean.t_event_model import EventModel
 from jdqd.a03.event_pred.algor.common.model_util import load_models
 from jdqd.a03.event_pred.algor.predict.predict import predict_sample
 
+
 # 模型存放路径
 models_dir = cat_path(appconf.ALGOR_MODULE_ROOT, 'event_pred')
+date_formatter = '%Y-%m-%d'
 
 
 def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model: EventModel):
@@ -43,7 +44,7 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
     logger.info('开始训练模型')
 
     if not os.path.exists(models_dir):
-        os.mkdir(models_dir)
+        os.makedirs(models_dir)
     pca_dir = models_dir
     sub_model_dirs = []
     sub_model_names = []
@@ -51,48 +52,42 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
     pcas = []
     outputs_list = []
     params_list = []
-    try:
-        # 先进行降维，对于PCA降维来说它始终只有固定的降维组合，若先对滞后期的选择的话，会导致出现N个重复的降维组合
-        for i in range(event_model.dr_min, event_model.dr_max, event_model.size):  # 各种降维选择
-            values_pca = preprocess.apply_pca(i, pca_dir, data)
-            # 基于页面选择的开始日期、结束日期的整个范围中每一天作为一个基准日期，在该基准日期往前推max_input_len至min_input_len天
-            # 的范围内每次间隔5天（10、15、20天）拉取数据训练模型。
-            for j in range(event_model.delay_min_day, event_model.delay_max_day, 5):  # 滞后期的选择
-                logger.info(f"Current value: 滞后期={j}, pca={i}")
-                lag_dates.append(j)
-                pcas.append(i)
-                sub_model_name = f'{event_model.model_name}-{j}-{event_model.days}-{i}'
-                sub_model_names.append(sub_model_name)
-                sub_model_dir = cat_path(models_dir, sub_model_name)
-                if not os.path.exists(sub_model_dir):
-                    os.mkdir(sub_model_dir)
-                sub_model_dirs.append(sub_model_dir)
-                array_x, array_y, array_yin = train_model.gen_samples(values_pca, events_p_oh, j, event_model.days,
-                                                                      dates, event_model.tran_start_date,
-                                                                      event_model.tran_end_date)
-                outputs_list.append(array_y)
-                params_list.append([j, event_model.days, i])
-                train_model.train(event_model.train_batch_no, event_model.epoch, event_model.neure_num, array_x,
-                                  array_y, array_yin, sub_model_dir)
+    # 先进行降维，对于PCA降维来说它始终只有固定的降维组合，若先对滞后期的选择的话，会导致出现N个重复的降维组合
+    for i in range(event_model.dr_min, event_model.dr_max, event_model.size):  # 各种降维选择
+        values_pca = preprocess.apply_pca(i, pca_dir, data)
+        # 基于页面选择的开始日期、结束日期的整个范围中每一天作为一个基准日期，在该基准日期往前推max_input_len至min_input_len天
+        # 的范围内每次间隔5天（10、15、20天）拉取数据训练模型。
+        for j in range(event_model.delay_min_day, event_model.delay_max_day, 5):  # 滞后期的选择
+            logger.info(f"Current value: 滞后期={j}, pca={i}")
+            lag_dates.append(j)
+            pcas.append(i)
+            sub_model_name = f'{event_model.model_name}-{j}-{event_model.days}-{i}'
+            sub_model_names.append(sub_model_name)
+            sub_model_dir = cat_path(models_dir, sub_model_name)
+            if not os.path.exists(sub_model_dir):
+                os.makedirs(sub_model_dir)
+            sub_model_dirs.append(sub_model_dir)
+            array_x, array_y, array_yin = train_model.gen_samples(values_pca, events_p_oh, j, event_model.days,
+                                                                  dates, event_model.tran_start_date,
+                                                                  event_model.tran_end_date)
+            outputs_list.append(array_y)
+            params_list.append([j, event_model.days, i])
+            train_model.train(event_model.train_batch_no, event_model.epoch, event_model.neure_num, array_x,
+                              array_y, array_yin, sub_model_dir)
 
-        logger.info('训练完成, 模型存入数据库')
+    logger.info('训练完成, 模型存入数据库')
 
-        detail_ids = pgsql.model_train_done(event_model.model_id, lag_dates, pcas, sub_model_dirs, sub_model_names,
-                                            outputs_list, events_set, ModelStatus.SUCCESS.value)
+    detail_ids = pgsql.model_train_done(event_model.model_id, lag_dates, pcas, sub_model_dirs, sub_model_names,
+                                        outputs_list, events_set)
 
-        return sub_model_dirs, params_list, detail_ids
-    except Exception as e:
-        logger.error(e)
-        pgsql.update_model_status(event_model.model_id, ModelStatus.FAILD.value)
-        raise RuntimeError(e)
+    return sub_model_dirs, params_list, detail_ids
 
 
-def evaluate_sub_models(model_id, data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
-                        eval_start_date, eval_end_date):
+def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set, eval_start_date,
+                        eval_end_date):
     """
     用指定的模型对指定的数据进行评估。
 
-    :param model_id: string.模型编号
     :param data: array.特征数据
     :param dates: datetime/date.数据表日期列表
     :param detail_ids: array.t_event_model_detail表的id.
@@ -107,14 +102,14 @@ def evaluate_sub_models(model_id, data, dates, detail_ids, sub_model_dirs, param
     n_classes = len(events_set)
 
     # 评估模型. scores: 子模型综合评分列表; events_num: 测试机事件个数
-    scores, events_num = meval.evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh,
-                                                   events_set, n_classes, eval_start_date, eval_end_date)
+    scores, events_num = meval(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
+                               n_classes, eval_start_date, eval_end_date)
 
     logger.info('模型评估结束, 筛选top模型并入库')
     scores.sort(key=lambda x: x[0], reverse=True)
     top_scores = scores[:min(10, len(scores))]
 
-    pgsql.model_eval_done(model_id, top_scores, events_num, ModelStatus.SUCCESS.value)
+    pgsql.model_eval_done(top_scores, events_num)
 
 
 def web_predict(model_id, data, dates, events_set, task_id, pred_start_date):
@@ -129,20 +124,16 @@ def web_predict(model_id, data, dates, events_set, task_id, pred_start_date):
       task_id: 预测任务的 id
       pred_start_date: 开始预测日期, 即预测结果由此日期开始
     """
-    try:
-        event_predict_array = pgsql.query_sub_models_by_model_id(model_id)
-        # 事件类别数量(含0事件)
-        num_classes = len(events_set)
+    event_predict_array = pgsql.query_sub_models_by_model_id(model_id)
+    # 事件类别数量(含0事件)
+    num_classes = len(events_set)
 
-        preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred, pred_detail_ids, last_date_data_pred = \
-            __predict_by_sub_models(data, dates, event_predict_array, pred_start_date, num_classes, task_id)
-        if pred_detail_ids:
-            pgsql.insert_pred_result(preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred,
-                                     pred_detail_ids, events_set, task_id)
-        pgsql.predict_task_done(task_id, last_date_data_pred, ModelStatus.SUCCESS.value)
-    except Exception as e:
-        pgsql.update_task_status(task_id, ModelStatus.FAILD.value)
-        raise RuntimeError(e)
+    preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred, pred_detail_ids, last_date_data_pred = \
+        __predict_by_sub_models(data, dates, event_predict_array, pred_start_date, num_classes, task_id)
+    if pred_detail_ids:
+        pgsql.insert_pred_result(preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred,
+                                 pred_detail_ids, events_set, task_id)
+    return last_date_data_pred
 
 
 def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_date, num_classes, task_id):
@@ -180,21 +171,25 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
         sub_model = event_predict.model_name
         logger.info(f'正在使用模型{sub_model}进行预测')
         input_len = event_predict.lag_date
+        # 预测天数指的是模型可以预测n天，而不是预测开始日期+n天。假设预测开始日期为6月1日，则模型从6月1日起，每次预测n天
+        # 直到今天的日期，且对重复预测的处理是使用最新的预测。
         output_len = event_predict.days
         n_pca = event_predict.pca
-        detail_id = event_predict.event_predict
+        detail_id = event_predict.detail_id
 
         model_dir = cat_path(models_dir, sub_model)
         values_pca = pp.apply_pca(n_pca, models_dir, data, True)
-        inputs_test, output_dates = pp.gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
-        max_output_date = output_dates[-1] + timedelta(1)
+        inputs_data, output_dates = pp.gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
+        # 取样本数据中最大的日期，再往后推1天  TODO dates[-1]要求日期必须升序排序
+        max_output_date = datetime.strptime(dates[-1], date_formatter).date() + timedelta(1)
         output_dates.append(max_output_date)  # 此时output_dates不包含预测第一天后日期
-        dates_data = [output_dates[0] - timedelta(1)]
-        dates_data.extend(output_dates[:-1])
+        dates_data = [datetime.strptime(output_dates[0], date_formatter).date() - timedelta(1)]
+        dates_data.extend([datetime.strptime(out_put_date, date_formatter).date()
+                           for out_put_date in output_dates[:-1]])
 
         last_date_data_pred = dates_data[-1]
 
-        predicted_detail_id_dates = pgsql.query_predicted_rsts(event_predict.detail_id, pred_start_date, task_id)
+        predicted_detail_id_dates = pgsql.query_predicted_rsts(detail_id, pred_start_date, task_id)
         predicted_dates = predicted_detail_id_dates.get(detail_id)  # type of list of str
         if predicted_dates is None:
             latest_date_predicted = False
@@ -204,15 +199,15 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
             predicted_dates_to_delete = predicted_dates[-output_len + 1:]
             predicted_dates = predicted_dates[:-output_len + 1]  # 截取只预测一天的预测结果
             max_predicted_date = predicted_dates[-1]
-            zipped_unpredicted = [[d, i, dd] for d, i, dd in zip(output_dates, inputs_test, dates_data)
+            zipped_unpredicted = [[d, i, dd] for d, i, dd in zip(output_dates, inputs_data, dates_data)
                                   if d not in predicted_dates]
             if not zipped_unpredicted:
                 logger.info(f'{sub_model}所有日期已预测, 跳过')
                 continue
 
-            output_dates, inputs_test, dates_data, = zip(*zipped_unpredicted)
+            output_dates, inputs_data, dates_data, = zip(*zipped_unpredicted)
             output_dates = list(output_dates)
-            inputs_test = list(inputs_test)
+            inputs_data = list(inputs_data)
             dates_data = list(dates_data)
             if max_predicted_date == max_output_date:
                 latest_date_predicted = True
@@ -220,12 +215,12 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
                 latest_date_predicted = False
 
         # 预测日期, 包含第一天以后日期
-        dates_pred_all_model = [[dd + timedelta(t) for t in range(1, output_len + 1)] for dd in dates_data]
+        dates_pred_all_model = [[(dd + timedelta(t)) for t in range(1, output_len + 1)] for dd in dates_data]
 
         encoder, decoder = load_models(model_dir)
-        pred = __predict(encoder, decoder, inputs_test, output_len, num_classes)
+        pred = model_predict(encoder, decoder, inputs_data, output_len, num_classes)
 
-        pred_one = [p[0] for p in pred]  # 只预测一天
+        pred_one = [p[0] for p in pred]  # 在预测到最后一天之前的每一天预测的结果都只有第一天可用
         if not latest_date_predicted:
             pred_one.extend(pred[-1][1:])
             # 此时output_dates添加第一天以后日期
@@ -244,7 +239,7 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
     return preds_one, preds_all, dates_pred_one, dates_pred_all, dates_pred_data, pred_detail_ids, last_date_data_pred
 
 
-def __predict(encoder, decoder, inputs, output_len, n_classes):
+def model_predict(encoder, decoder, inputs, output_len, n_classes):
     """
     提供预测服务
     Args:
@@ -255,7 +250,6 @@ def __predict(encoder, decoder, inputs, output_len, n_classes):
       output_len: decoder 输出长度, 即预测天数
 
     Returns:
-        TODO 详细再写，举例数据格式，这里要把预测的天数剥离出来，每次循序预测一天
         每个事件每一天发生的概率
         输入样本的预测结果, shape(一次预测结果, 预测天数, 数据中所有事件类别个数)
         一次预测结果包含：预测5天，每天9个事件类别

@@ -15,6 +15,7 @@ from jdqd.a03.event_pred.enum.data_status import DataStatus
 from feedwork.database.database_wrapper import DatabaseWrapper
 from feedwork.database.enum.query_result_type import QueryResultType
 from feedwork.utils.DateHelper import sys_date, sys_time
+from jdqd.a03.event_pred.enum.model_status import ModelStatus
 
 # 读取配置文件
 __cfg_data = appconf.appinfo["a03"]['data_source']
@@ -22,6 +23,7 @@ event_dbname = __cfg_data.get('event_dbname')  # 事件库数据库名
 data_dbname = __cfg_data.get('data_dbname')   # 特征库数据库名
 
 sys_date_formatter = '%Y-%m-%d'
+sys_date_formatter_db = 'yyyy-MM-dd'
 sys_time_formatter = '%H:%M:%S'
 
 
@@ -37,7 +39,19 @@ def update_model_status(model_id, status):
     __modify(sql, (status, model_id))
 
 
-def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set, status):
+def model_train_finish(model_id, status):
+    """
+    更新t_event_model表的模型状态。
+
+    :param model_id: string. 模型编号
+    :param status: string. 模型状态
+    """
+    sql = "UPDATE t_event_model SET status = %s, tran_finish_date = %s, tran_finish_time = %s WHERE model_id = %s"
+
+    __modify(sql, (status, sys_date(sys_date_formatter), sys_time(sys_time_formatter), model_id))
+
+
+def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set):
     """
     更新t_event_model_file、t_event_model_detail、t_event_model_tran表的数据。
 
@@ -58,7 +72,7 @@ def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names,
         # 子模型信息入库
         detail_ids = []
         sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id, lag_date, pca) values " \
-              "(%s, %s, %s, %s, %s)"
+              "(%s, %s, %s, %s, %s, %s)"
         params = []
         for sub_model_name, lag_date, pca in zip(sub_model_names, lag_dates, pcas):
             detail_id = UuidHelper.guid()
@@ -74,7 +88,7 @@ def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names,
             for e in events_set:
                 tran_id = UuidHelper.guid()
                 event_num = events_num[e]
-                param = (tran_id, e, event_num, detail_id, status)
+                param = (tran_id, e, event_num, detail_id, ModelStatus.SUCCESS.value)
                 params.append(param)
         db.executemany(sql, params)
 
@@ -87,20 +101,15 @@ def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names,
         db.close()
 
 
-def model_eval_done(model_id, top_scores, events_num, status):
+def model_eval_done(top_scores, events_num):
     """
     更新t_event_model表的模型状态、训练开始日期、训练结束日期。
 
-    :param model_id: string. 模型编号
-    :param status: string. 模型状态
+    :param top_scores:
+    :param events_num:
     """
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        db.begin_transaction()
-
-        sql = "UPDATE t_event_model SET status = %s, tran_finish_date = %s, tran_finish_time = %s WHERE model_id = %s"
-        db.execute(sql, (status, sys_date(sys_date_formatter), sys_time(sys_time_formatter), model_id))
-
         sql = "insert into t_event_model_tot(tot_id, num, false_rate, recall_rate, false_alarm_rate, " \
               "tier_precision, tier_recall, bleu, score, status, detail_id) values " \
               "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -114,10 +123,8 @@ def model_eval_done(model_id, top_scores, events_num, status):
                      DataStatus.SUCCESS.value, detail_id)
             params.append(param)
         db.executemany(sql, params)
-
         db.commit()
     except Exception as e:
-        db.rollback()
         raise RuntimeError(e)
     finally:
         db.close()
@@ -224,8 +231,8 @@ def query_sub_models_by_model_id(model_id):
 
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t3.days FROM t_event_model_detail t1 JOIN " \
-              "t_event_model_tot t2 ON t1.detail_id = t2.detail_id JOIN t_event_model t3 ON t1.model_id = t3.model_id "\
+        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t2.days FROM t_event_model_detail t1 " \
+              "JOIN t_event_model t2 ON t1.model_id = t2.model_id "\
               "WHERE t1.model_id = %s"
         event_predict = db.query(sql, (model_id,), result_type=QueryResultType.BEAN, wild_class=EventPredict)
         if len(event_predict) < 1:
@@ -248,7 +255,7 @@ def query_predicted_rsts(detail_id, pred_start_date, task_id):
 
     Returns: dict. key: detail_id, value: 已预测的日期列表
     """
-    sql = "select detail_id, forecast_date from t_event_task_rs where task_id = %s and detail_id = %s " \
+    sql = "select detail_id, forecast_date from t_event_task_rs WHERE task_id = %s and detail_id = %s " \
           "and forecast_date >= %s"
     results = __query(sql, event_dbname, (task_id, detail_id, pred_start_date))
     detail_id_dates = {}
@@ -292,22 +299,33 @@ def insert_pred_result(probs, probs_all_days, dates, dates_pred_all, dates_data,
                       "(%s, %s, %s, %s, %s, %s, %s, %s, %s)"
     sql_task_rs_params = []
     sql_task_rs_his_params_hist = []
-    for p, pa, ds, da, did, dd in zip(probs, probs_all_days, dates, dates_pred_all, detail_ids, dates_data):
-        for i, e in enumerate(events_set):
-            for j, d in enumerate(ds):
-                param = (UuidHelper.guid(), str(e), f'{p[j][i]:.4f}', str(d), DataStatus.SUCCESS.value, did, task_id,
-                         sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
-                sql_task_rs_params.append(param)
-            for j, d in enumerate(da):
-                pd = pa[j]
-                for k, d_ in enumerate(d):
-                    pd_ = pd[k]
-                    param_hist = (UuidHelper.guid(), str(e), f'{pd_[i]:.4f}', str(d_), did, task_id,
-                                  sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
-                    sql_task_rs_his_params_hist.append(param_hist)
+    db = DatabaseWrapper(dbname=event_dbname)
+    try:
+        db.begin_transaction()
+        for p, pa, ds, da, did, dd in zip(probs, probs_all_days, dates, dates_pred_all, detail_ids, dates_data):
+            for i, e in enumerate(events_set):
+                for j, d in enumerate(ds):
+                    param = (UuidHelper.guid(), str(e), f'{p[j][i]:.4f}', str(d), DataStatus.SUCCESS.value, did, task_id,
+                             sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
+                    sql_task_rs_params.append(param)
+                for j, d in enumerate(da):
+                    pd = pa[j]
+                    for k, d_ in enumerate(d):
+                        pd_ = pd[k]
+                        param_hist = (UuidHelper.guid(), str(e), f'{pd_[i]:.4f}', str(d_), did, task_id,
+                                      sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
+                        sql_task_rs_his_params_hist.append(param_hist)
+            db.executemany(sql_task_rs, sql_task_rs_params)
+            sql_task_rs_params = []
+            db.executemany(sql_task_rs_his, sql_task_rs_his_params_hist)
+            sql_task_rs_his_params_hist = []
+        db.commit()     # 配置文件中设置不自动提交，所以手动提交
+    except Exception as e:
+        db.rollback()
+        raise RuntimeError(e)
+    finally:
+        db.close()
 
-        __modify_many(sql_task_rs, sql_task_rs_params, 't_event_task_rs表预测结果插入出错')
-        __modify_many(sql_task_rs_his, sql_task_rs_his_params_hist, 't_event_task_rs_his表预测结果插入出错')
 
 
 def update_task_status(task_id, status):
@@ -321,7 +339,7 @@ def update_task_status(task_id, status):
     __modify(sql, param)
 
 
-def predict_task_done(task_id, date_data_pred, status):
+def predict_task_finish(task_id, date_data_pred, status):
     """
     修改t_event_task表的运行状态、任务结束日期、预测结束日期、任务结束事件。
     :param task_id: string. 任务编号
@@ -334,18 +352,17 @@ def predict_task_done(task_id, date_data_pred, status):
     __modify(sql, param)
 
 
-def query_data_table_2pandas(table_name, date_col):
+def query_data_table_2pandas(table_name):
     """
     查询数据库中指定数据表的所有数据。该方法会将查询到的数据中date_col字段数据转换为字符串类型。
 
     :param table_name: string. 数据表名
-    :param date_col: string. 数据表中日期字段名
     :return dataframe.指定表的dataframe形式。
     """
     # 每次查询建立一次连接
     db = DatabaseWrapper(dbname=data_dbname)
     try:
-        sql = f"SELECT CAST({date_col} AS VARCHAR) AS {date_col},* FROM {table_name} ORDER BY {date_col} ASC"
+        sql = f"SELECT * FROM {table_name} ORDER BY rqsj ASC"
         result = db.query(sql, (), result_type=QueryResultType.PANDAS)
         return result
     except Exception as e:
@@ -368,7 +385,8 @@ def query_event_table_2pandas(table_name, event_col, date_col):
     db = DatabaseWrapper(dbname=data_dbname)
     try:
         sql = f"SELECT {event_col}, CAST({date_col} AS VARCHAR) AS {date_col} FROM {table_name} " \
-            f"WHERE qssj IS NOT NULL AND {event_col} IS NOT NULL AND {date_col} IS NOT NULL ORDER BY {date_col} ASC"
+            f"WHERE qssj IS NOT NULL AND ({event_col} IS NOT NULL AND {event_col} <> '') AND " \
+            f"({date_col} IS NOT NULL AND {date_col} <> '') AND LENGTH({date_col}) > 8 ORDER BY {date_col} ASC"
         result = db.query(sql, (), result_type=QueryResultType.PANDAS)
         return result
     except Exception as e:
@@ -432,7 +450,8 @@ def query_teventtask_by_id(task_id):
     """
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT * FROM t_event_task WHERE task_id = %s"
+        sql = "SELECT t2.event_type, t1.* FROM t_event_task t1 JOIN t_event_model t2 ON t1.model_id = t2.model_id " \
+              "WHERE t1.task_id = %s"
         t_event_task = db.query(sql, (task_id,), result_type=QueryResultType.BEAN, wild_class=EventTask)
         if len(t_event_task) != 1:
             raise RuntimeError(f"Query t_event_task error, the {task_id} cannot get only one row")
@@ -459,7 +478,6 @@ def __modify_many(sql: str, parameters: list, error=''):
         db.executemany(sql, parameters)
         db.commit()     # 配置文件中设置不自动提交，所以手动提交
     except Exception as e:
-        db.rollback()
         raise RuntimeError(f'{error}: {str(e)} ' if error else error)
     finally:
         db.close()
@@ -481,7 +499,6 @@ def __modify(sql: str, parameter: tuple, error=''):
         db.execute(sql, parameter)
         db.commit()  # 配置文件中设置不自动提交，所以手动提交
     except Exception as e:
-        db.rollback()
         raise RuntimeError(f'{error}: {str(e)} ' if error else error)
     finally:
         db.close()

@@ -24,6 +24,8 @@ class EventTask(object):
         self._create_time = ''
         self._predict_end_date = ''
 
+        self._event_type = ''
+
     @property
     def task_id(self):
         return self._task_id
@@ -135,3 +137,12 @@ class EventTask(object):
     @predict_end_date.setter
     def predict_end_date(self, predict_end_date):
         self._predict_end_date = predict_end_date
+
+    @property
+    def event_type(self):
+        return self._event_type
+
+    @event_type.setter
+    def event_type(self, event_type):
+        self._event_type = event_type
+
