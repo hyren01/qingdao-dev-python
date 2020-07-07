@@ -17,8 +17,6 @@ from jdqd.a03.event_pred.enum.event_evalution_status import ModelEvalutionStatus
 model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, 'event_pred')
 
 
-# @todo(zhxin): 数据维度含义明细
-
 def aggre_preds(preds):
     """
     将同一事件的多天预测值按照取最大值进行合并, 即, 如果一天一个事件类别有多次预测的多个预测
@@ -285,9 +283,8 @@ def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, ev
         num_poses = []
         num_fas = []
         num_comb_poses = []
-        # TODO 各种写死的值至少要写出表示什么意思
         for i, event in enumerate(events_set):
-            if str(event) == '0':
+            if str(event) == '0':   # 0表示事件类别
                 continue
             event_num = events_num[event]
             if event_num == 0:

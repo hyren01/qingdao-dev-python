@@ -368,7 +368,10 @@ def get_article_list(event_id):
                 article_id_arr.append(ids)
             # 查询文章信息
             article = db.query(
-                "select article_id,title as translated_title,title from t_article_msg_zh where article_id in (%s)" % ','.join(
+                "select a.article_id,b.title as translated_title,b.content_summary,a.spider_time,a.source "
+                "from t_article_msg a "
+                "left join t_article_msg_zh b on a.article_id=b.article_id "
+                "where a.article_id in (%s) limit 10" % ','.join(
                     ['%s'] * len(article_id_arr)), article_id_arr, QueryResultType.JSON)
             # 查询文章关联的事件，用于前端连线
             for a in article:

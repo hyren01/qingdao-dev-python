@@ -132,6 +132,7 @@ def create_event(graph_db, event_id, short_sentence, event_datetime, event_tag):
     """
     if event_tag is None:
         event_tag = global_event_tag
+    short_sentence = str(short_sentence).replace("'", "\"")
     event_attribute = "event_id: '{event_id}', event_sentence: '{short_sentence}', event_date: " \
                       "'{event_datetime}'".format(event_id=event_id, short_sentence=short_sentence,
                                                   event_datetime=event_datetime)

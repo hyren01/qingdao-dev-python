@@ -30,13 +30,13 @@ def transform_any_2_en(article: str):
     try:
         # 编码请求数据
         data_en = urlencode(data)
-        req = f"{pre_config.translate_url}&{data_en}"
+        data_en = data_en.encode("utf-8")
         # 访问小牛发起翻译请求
-        res = urlopen(req)
+        res = urlopen(pre_config.translate_url, data_en)
         # 获取请求反馈
         res = res.read()
         # 解析反馈结果
-        res_dict = json.loads(res)
+        res_dict = json.loads(res.decode("utf-8"))
 
         # 判断小牛是否已经翻译，将反馈结果赋值于content
         if "tgt_text" in res_dict:
@@ -69,13 +69,13 @@ def transform_any_2_zh(article: str):
     try:
         # 编码请求数据
         data_en = urlencode(data)
-        req = f"{pre_config.translate_url}&{data_en}"
+        data_en = data_en.encode("utf-8")
         # 访问小牛发起翻译请求
-        res = urlopen(req)
+        res = urlopen(pre_config.translate_url, data_en)
         # 获取请求反馈
         res = res.read()
         # 解析反馈结果
-        res_dict = json.loads(res)
+        res_dict = json.loads(res.decode("utf-8"))
         # 判断小牛是否已经翻译，将反馈结果赋值于content
         if "tgt_text" in res_dict:
             content = res_dict['tgt_text']
@@ -91,5 +91,6 @@ def transform_any_2_zh(article: str):
 
 
 if __name__ == "__main__":
-    article = "小明给在山区支教的同学打了一个电话。"
+    article = f"你好啊！"
     trans = transform_any_2_en(article)
+    print(trans)

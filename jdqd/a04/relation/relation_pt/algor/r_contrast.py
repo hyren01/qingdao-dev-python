@@ -2,9 +2,12 @@ from itertools import product
 from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
 base_words = ['尽管', '虽然', '固然']
-contrast_words = ['但是', '然而', '可是', '但', '还是', '却']
-keywords = list(product(base_words, contrast_words))
-keywords_single = [[w] for w in contrast_words]
+contrast_words1 = ['只不过', '不过', '但是', '反而', '然而', '可是', '但', '还是']
+contrast_words2 = ['还是', '还', '却']
+keywords1 = list(product(base_words, contrast_words1))
+keywords2 = list(product(base_words, contrast_words2))
+keywords = keywords1 + keywords2
+keywords_single = [[w] for w in contrast_words1]
 
 keyword_rules = {
     'rule101': keywords,

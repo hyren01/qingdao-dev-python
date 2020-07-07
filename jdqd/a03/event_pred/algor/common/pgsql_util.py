@@ -117,8 +117,7 @@ def model_eval_done(top_scores, events_num):
         for score, bleu_summary, tier_precision_summary, tier_recall_summary, fr_summary, rc_summary, \
                 fa_summary, detail_id in top_scores:
             num_events = np.sum([v for k, v in events_num.items() if str(k) != '0'])
-            tot_id = UuidHelper.guid()
-            param = (tot_id, str(num_events), str(fr_summary), str(rc_summary), str(fa_summary),
+            param = (UuidHelper.guid(), str(num_events), str(fr_summary), str(rc_summary), str(fa_summary),
                      str(tier_precision_summary), str(tier_recall_summary), str(bleu_summary), str(score),
                      DataStatus.SUCCESS.value, detail_id)
             params.append(param)
@@ -325,7 +324,6 @@ def insert_pred_result(probs, probs_all_days, dates, dates_pred_all, dates_data,
         raise RuntimeError(e)
     finally:
         db.close()
-
 
 
 def update_task_status(task_id, status):

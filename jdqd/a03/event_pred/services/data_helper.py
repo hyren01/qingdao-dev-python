@@ -7,6 +7,7 @@ desc:
 import feedwork.AppinfoConf as appconf
 import numpy as np
 import pandas as pd
+import re
 from jdqd.a03.event_pred.algor.common.pgsql_util import query_data_table_2pandas, query_event_table_2pandas
 from jdqd.a03.event_pred.algor.common.preprocess import events_one_hot
 from jdqd.a03.event_pred.enum.event_type import EventType
@@ -98,20 +99,27 @@ def __transform_df(df, date_col):
 
 
 def __transform_date_str(date_str):
+    """
+    转换并格式化日期字符串。将yyyy年MM月dd日、yyyy-M-d、yyyy/MM/dd转换成yyyy-MM-dd格式。
+    Args:
+      date_str: string，日期
+
+    Returns: string，日期
+    """
     if date_str is None or date_str == '':
         return
     date_str = date_str.split(" ")[0]  # 处理yyyy-MM-dd HH:mm:ss的情况，只要yyyy-MM-dd
     # 尽可能将各种格式的日期格式转换为统一的yyyy-MM-dd格式，日期数据存在yyyy-M的情况
     date_str = date_str.replace("年", "-").replace("月", "-").replace("日", "").replace("/", "-").strip()
-    # pattern = re.compile(r'\d+')
-    # date_part = re.findall(pattern, date_str)
-    # date_part_len = len(date_part)
-    # yyyy = date_part[0] if date_part_len > 0 else ''
-    # # 若月份与日期字符长度为1则前补0，否则原样输出
-    # mm = (f'0{date_part[1]}'if len(date_part[1]) == 1 else date_part[1]) if date_part_len > 1 else ''
-    # dd = (f'0{date_part[2]}'if len(date_part[2]) == 1 else date_part[2]) if date_part_len == 3 else ''
+    pattern = re.compile(r'\d+')
+    date_part = re.findall(pattern, date_str)
+    date_part_len = len(date_part)
+    yyyy = date_part[0] if date_part_len > 0 else ''
+    # 若月份与日期字符长度为1则前补0，否则原样输出
+    mm = (f'0{date_part[1]}'if len(date_part[1]) == 1 else date_part[1]) if date_part_len > 1 else ''
+    dd = (f'0{date_part[2]}'if len(date_part[2]) == 1 else date_part[2]) if date_part_len == 3 else ''
 
-    return date_str
+    return f"{yyyy}-{mm}-{dd}"
 
 
 def __transform_events(table_name, dates, event_priority, event_col, date_col):

@@ -8,7 +8,7 @@ neo4j-driver==1.7.6
 requests==2.22.0
 Keras==2.3.1
 Keras-Applications==1.0.8
-keras-embed-sim=0.7.0
+keras-embed-sim==0.7.0
 keras-layer-normalization==0.14.0
 keras-multi-head==0.22.0
 keras-pos-embd==0.11.0

@@ -251,7 +251,6 @@ def gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
     Returns:
       起始预测日期之后对应的 encoder 输入序列, 对应的日期列表
     """
-    # @todo(zhxin): 处理界限问题
     pred_start_row = date_to_index(pred_start_date, dates)
     # 用于预测的每一个样本对应的特征数据开始下标
     min_input_start_row = pred_start_row - input_len

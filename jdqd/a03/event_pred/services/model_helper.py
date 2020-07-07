@@ -179,6 +179,7 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
 
         model_dir = cat_path(models_dir, sub_model)
         values_pca = pp.apply_pca(n_pca, models_dir, data, True)
+        # inputs_data指的是模型输入样本、output_dates指的是从开始预测日期起至数据中最大日期范围内的所有日期
         inputs_data, output_dates = pp.gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
         # 取样本数据中最大的日期，再往后推1天  TODO dates[-1]要求日期必须升序排序
         max_output_date = datetime.strptime(dates[-1], date_formatter).date() + timedelta(1)

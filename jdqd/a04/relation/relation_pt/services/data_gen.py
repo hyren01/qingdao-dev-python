@@ -5,14 +5,16 @@ import os
 import re
 import json
 import requests
+import glob
+from tqdm import tqdm
 from feedwork.utils import FileHelper
-from jdqd.a04.relation.relation_pt.algor import r_then, r_causality, r_contrast
-
-FileHelper.write('test_feedwork_file.txt', 'bbb')
+from jdqd.a04.relation.relation_pt.algor import r_then, r_parallel, r_further
 
 
-def extract_articles(article_content, relation):
+def extract_articles(article_content, relation, neg_num, with_events=True,
+                     neg_capacity=10000):
     rsts = []
+    rsts_neg = []
     sentences = relation_util.split_article_to_sentences(article_content)
     for sentence in sentences:
         rst = relation_combine.extract_all_rules(sentence, relation.rules,
@@ -23,13 +25,20 @@ def extract_articles(article_content, relation):
             keyword = rst['tag_indexes']
             if (not left) or (not right):
                 continue
-            left_events = get_events(left)
-            right_events = get_events(right)
-            line = [sentence, str(keyword), left, right, left_events,
-                    right_events]
+            if with_events:
+                left_events = get_events(left)
+                right_events = get_events(right)
+                line = [sentence, str(keyword), left, right, left_events,
+                        right_events]
+            else:
+                line = [sentence, str(keyword), left, right, '', '']
             line = '\t'.join(line) + '\n'
             rsts.append(line)
-    return rsts
+        else:
+            if neg_num < neg_capacity:
+                rsts_neg.append(sentence + '\n')
+                neg_num += 1
+    return rsts, rsts_neg, neg_num
 
 
 def zh_ratio(text):
@@ -127,14 +136,80 @@ def filter_articles(articles):
     return filtered
 
 
-if __name__ == '__main__':
+def save_ner_data():
     rst_articles = []
-    articles_zh = get_articles()
-    relation = r_contrast
+    rst_articles_neg = []
+    # articles_zh = get_articles()
+    relation = r_parallel
     # 格式: 原句\t{'keyword':[start, end]}\t左句\t右句\t左句事件列表\t右句事件列表
     # 其中, 左右句事件列表由事件组成, 以汉字丨(音gun)分隔, 每个事件包含主语负词谓语宾语,
     # 以|分隔
-    for id_, content in articles_zh:
-        rsts = extract_articles(content, relation)
-        rst_articles.extend(rsts)
-    save_content(''.join(rst_articles), f'data_{relation.__name__}.txt')
+    articles_dir = r'C:\work1\qingdao\archive\articles\shizheng2'
+    articles_fn = os.listdir(articles_dir)
+    neg_num = 0
+    for fn in tqdm(articles_fn):
+        fp = os.path.join(articles_dir, fn)
+        with open(fp, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            if len(lines) < 2:
+                continue
+            lines = lines[1:]
+            content = ''.join(lines)
+            content = remove_white_space(content)
+            rsts, rsts_neg, neg_num = extract_articles(content, relation,
+                                                       neg_num, False)
+            rst_articles.extend(rsts)
+            rst_articles_neg.extend(rsts_neg)
+    save_content(''.join(rst_articles), ner_data_fn)
+    save_content(''.join(rst_articles_neg[:20000]), ner_data_neg_fn)
+
+
+def add_pos_events(new_ner_data_fn):
+    with open(ner_data_fn, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        with open(new_ner_data_fn, 'a', encoding='utf-8') as f_w:
+            for line in lines:
+                splits = line.split('\t')
+                left = splits[2]
+                right = splits[3]
+                try:
+                    left_events = get_events(left)
+                    right_events = get_events(right)
+                    splits[4] = left_events
+                    splits[5] = right_events
+                    new_line = '\t'.join(splits) + '\n'
+                    f_w.write(new_line)
+                except Exception as e:
+                    print(e)
+
+
+
+def add_neg_events(new_ner_data_neg_fn, neg_num, neg_capacity):
+    with open(ner_data_neg_fn, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        with open(new_ner_data_neg_fn, 'a', encoding='utf-8') as f_w:
+            for line in lines:
+                splits = line.split('\t')
+                left = splits[2]
+                right = splits[3]
+                try:
+                    left_events = get_events(left)
+                    right_events = get_events(right)
+                    splits[4] = left_events
+                    splits[5] = right_events
+                    new_line = '\t'.join(splits) + '\n'
+                    f_w.write(new_line)
+                except Exception as e:
+                    print(e)
+
+if __name__ == '__main__':
+    ner_data_fn = 'data_parallel.txt'
+    ner_data_neg_fn = 'data_parallel_neg.txt'
+    new_ner_data_fn = 'data_parallel_e.txt'
+    add_pos_events(new_ner_data_fn)
+    pass
+
+    # for id_, content in articles_zh[:5]:
+    #     rsts = extract_articles(content, relation)
+    #     rst_articles.extend(rsts)
+    # save_content(''.join(rst_articles), f'data_{relation.__name__}.txt')
