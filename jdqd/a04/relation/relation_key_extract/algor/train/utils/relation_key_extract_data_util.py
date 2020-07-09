@@ -48,15 +48,15 @@ def PreProcessData(path):
 
 
 #训练集、测试集标注语料路径
-def get_data(train_path, test_path):
+def get_data(train_path, test_path, relation):
     """
     数据预处理，得到入模型的标准数据格式
     :param train_path: 训练集语料路径
     :param test_path: 测试集语料路径
     return input_train:训练集输入句子, result_train:训练集输入句子序列标签 input_test:测试集输入句子, result_test:测试集输入句子序列标签
     """
-    input_train, result_train = PreProcessData(train_path)
-    input_test, result_test = PreProcessData(test_path) 
+    input_train, result_train = PreProcessData(train_path + '/' + f'{relation}.train_line.txt')
+    input_test, result_test = PreProcessData(test_path+ '/' + f'{relation}.test _line.txt')
     return input_train, result_train, input_test, result_test
 
 

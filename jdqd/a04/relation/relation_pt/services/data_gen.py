@@ -1,13 +1,13 @@
 from jdqd.a04.relation.relation_pt.algor import relation_combine, relation_util
 from feedwork.database.database_wrapper import DatabaseWrapper
 from feedwork.database.enum.query_result_type import QueryResultType
+from feedwork.AppinfoConf import ALGOR_PRETRAIN_ROOT
+from feedwork.utils.FileHelper import cat_path
 import os
 import re
 import json
 import requests
-import glob
 from tqdm import tqdm
-from feedwork.utils import FileHelper
 from jdqd.a04.relation.relation_pt.algor import r_then, r_parallel, r_further
 
 
@@ -23,7 +23,7 @@ def zh_ratio(text):
 
 
 def remove_white_space(text):
-    return text.replace(' ', '').replace('\n', '').replace('\t', '')
+    return text.replace(' ', '').replace('\n', '').replace('\t', '').replace('\u3000', '')
 
 
 def remove_html_tags(text):
@@ -47,18 +47,6 @@ def get_articles_from_db():
     t2 = time.time()
     print(f'finished query, used {t2 - t1} secs')
     return rst
-
-
-def get_articles():
-    txt = 'articles.txt'
-    if os.path.exists(txt):
-        articles_zh = json.loads(readfile(txt))
-        return articles_zh
-
-    articles = get_articles_from_db()
-    articles_zh = filter_db_articles(articles)
-    save_content(json.dumps(articles_zh), txt)
-    return articles_zh
 
 
 def save_content(content, fn, mode='w'):
@@ -141,20 +129,19 @@ def extract_article_relation(article_content, relation, neg_num, neg_capacity):
             right = rst['right']
             if (not left) or (not right):
                 continue
-            keyword = json.dumps(rst['tag_indexes'])
+            keyword = rst['tag_indexes']
             line = [sentence, keyword, left, right]
-            line = '\t'.join(line) + '\n'
             rsts_pos.append(line)
         else:
             if neg_num < neg_capacity:
-                rsts_neg.append(sentence + '\n')
+                rsts_neg.append(sentence)
                 neg_num += 1
     return rsts_pos, rsts_neg, neg_num
 
 
-def extract_articles_relation(articles_dir, relation, neg_capacity=10000):
+def extract_articles_relation(articles_content, relation, neg_capacity):
     """
-    遍历本地磁盘上的文章内容生成关键词模型训练数据,
+    遍历文章内容生成关键词模型训练数据,
     :param articles_dir:
     :param relation:
     :param neg_capacity:
@@ -162,16 +149,8 @@ def extract_articles_relation(articles_dir, relation, neg_capacity=10000):
     """
     rst_articles_pos = []
     rst_articles_neg = []
-    articles_fn = os.listdir(articles_dir)
     neg_num = 0
-    for fn in tqdm(articles_fn):
-        fp = os.path.join(articles_dir, fn)
-        with open(fp, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        if len(lines) < 2:
-            continue
-        lines = lines[1:]
-        content = ''.join(lines)
+    for content in tqdm(articles_content):
         content = remove_white_space(content)
         rsts, rsts_neg, neg_num = extract_article_relation(content, relation,
                                                            neg_num,
@@ -181,26 +160,97 @@ def extract_articles_relation(articles_dir, relation, neg_capacity=10000):
     return rst_articles_pos, rst_articles_neg
 
 
-def save_ner_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
-                  ner_data_pos_fp, ner_data_neg_fp):
+articles_db_path = cat_path(ALGOR_PRETRAIN_ROOT, 'articles.txt')
+
+
+def get_db_articles():
     """
-    遍历文章
-    :param relation:
-    :param neg_upper_bound:
-    :param ner_data_pos_fp:
-    :param ner_data_neg_fp:
+    获取数据库中爬取的文章内容. 如果有本地的内容文件, 则从本地读取, 否则从数据库读取,
+    并将过滤后的结果存到本地文件
     :return:
     """
-    save_content(''.join(rst_articles_pos), ner_data_pos_fp)
-    save_content(''.join(rst_articles_neg[:neg_upper_bound]), ner_data_neg_fp)
+    if os.path.exists(articles_db_path):
+        articles_zh = json.loads(readfile(articles_db_path))
+        return articles_zh
+
+    articles = get_articles_from_db()
+    articles_zh = filter_db_articles(articles)
+    save_content(json.dumps(articles_zh, ensure_ascii=False), articles_db_path)
+    return articles_zh
 
 
-def gen_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
-                      classify_data_pos_fp, classify_data_neg_fp):
-    rst_articles_pos = [r.replace('\n', '').split('\t') for r in
-                        rst_articles_pos]
-    rst_articles_neg = [r.replace('\n', '').split('\t') for r in
-                        rst_articles_neg]
+def get_articles_content(articles_dir, from_db=False):
+    if from_db:
+        articles_content = get_db_articles()
+        # 取下标1位置内容. 下标0位置为文章id
+        articles_content = [a[1] for a in articles_content]
+    else:
+        articles_fn = os.listdir(articles_dir)
+        articles_content = []
+        for fn in tqdm(articles_fn):
+            fp = os.path.join(articles_dir, fn)
+            with open(fp, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            if len(lines) < 2:
+                continue
+            # 第一行为标题, 且结尾无标点, 不好处理, 直接弃用
+            lines = lines[1:]
+            content = ''.join(lines)
+            articles_content.append(content)
+    return articles_content
+
+
+def save_ner_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
+                  ner_data_pos_fp, ner_data_neg_fp):
+    # save pos
+    lines_all_pos = []
+    for rp in rst_articles_pos:
+        sentence = rp[0]
+        keyword_indexes = rp[1]
+        tag = ['O'] * len(sentence)
+        indexes = list(keyword_indexes.values())
+        if len(indexes) == 1:
+            index1 = indexes[0]
+            tag[index1[0]:index1[1]] = ['B-S'] + (index1[1] - index1[0] - 1) * [
+                'I-S']
+
+        if len(indexes) == 2:
+            index1 = indexes[0]
+            tag[index1[0]:index1[1]] = ['B-C'] + (index1[1] - index1[0] - 1) * [
+                'I-C']
+            index2 = indexes[1]
+            tag[index2[0]:index2[1]] = ['B-E'] + (index2[1] - index2[0] - 1) * [
+                'I-E']
+        lines_sentence = ''.join(
+            [f'{c}\t{t}\n' for c, t in zip(sentence, tag)]) + '\n'
+        lines_all_pos.append(lines_sentence)
+    save_content(''.join(lines_all_pos), ner_data_pos_fp)
+
+    # save neg
+    lines_all_neg = []
+    for rn in rst_articles_neg[:neg_upper_bound]:
+        lines_sentence = ''.join([f'{c}\tO\n' for c in rn]) + '\n'
+        lines_all_neg.append(lines_sentence)
+    save_content(''.join(lines_all_neg), ner_data_neg_fp)
+
+
+def save_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
+                       classify_data_pos_fp, classify_data_neg_fp):
+    """
+    保存用于判定模型的数据, 正例与负例样本分别保存至不同的文件.
+    其中, 正例样本保存内容:
+        原句, tag_indexes, 左句, 右句, 左句事件1丨左句事件2...  , 右句事件1丨右句事件2...
+    负例样本保存内容:
+        原句, 事件1丨事件2...
+    事件保存内容: 主语|否定词|谓语|宾语
+
+    :param rst_articles_pos:
+    :param rst_articles_neg:
+    :param neg_upper_bound:
+    :param classify_data_pos_fp: 正例数据保存路径. 正例文件命名格式: classify_{relation}_pos.txt
+    :param classify_data_neg_fp: 负例数据保存路径. 负例文件命名格式: classify_{relation}_neg.txt
+    :return:
+    """
     with open(classify_data_pos_fp, 'a', encoding='utf-8') as fcp:
         for rp in rst_articles_pos:
             left = rp[2]
@@ -209,6 +259,8 @@ def gen_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
                 left_events = get_events(left)
                 right_events = get_events(right)
                 line = rp + [left_events, right_events]
+                # line[1] 为tag_indexes of type dict, 需转为str
+                line[1] = json.dumps(line[1], ensure_ascii=False)
                 line = '\t'.join(line) + '\n'
                 fcp.write(line)
             except Exception as e:
@@ -216,7 +268,7 @@ def gen_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
     with open(classify_data_neg_fp, 'a', encoding='utf-8') as fcn:
         for i, rp in enumerate(rst_articles_neg):
             if i > neg_upper_bound:
-                continue
+                break
             try:
                 events = get_events(rp[0])
                 line = rp + [events]
@@ -226,8 +278,12 @@ def gen_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
                 print(e)
 
 
-
 def gen_neg_by_other(relation):
+    """
+    使用其他关系已经生成的事件负例, 经本关系过滤后生成本关系所需的负例, 而不用重复调用事件抽取模块
+    :param relation:
+    :return:
+    """
     contrast_neg_f = r'C:\work1\qingdao\dev\python\jdqd\a04\relation\relation_pt\services\contrast_neg.txt'
     new_lines = []
     with open(contrast_neg_f, 'r', encoding='utf-8') as f:
@@ -243,34 +299,31 @@ def gen_neg_by_other(relation):
     save_content(''.join(new_lines), 'data_parallel_e_neg.txt')
 
 
-def filter_events():
-    new_lines = []
-    with open(
-        r'C:\work1\qingdao\dev\python\jdqd\a04\relation\relation_pt\services\data_parallel_e.txt',
-        'r', encoding='utf-8') as f:
-        fs = list(set(f.readlines()))
-        for line in fs:
-            conts = line.strip().split('\t')
-            if len(conts) == 6 and '丨' not in line:
-                left_event = conts[4]
-                right_event = conts[5]
-                if len(left_event) > 3 and len(right_event) > 3:
-                    new_line = '\t'.join(
-                        [conts[0], left_event, right_event]) + '\n'
-                    new_lines.append(new_line)
-    save_content(''.join(new_lines), 'data_parallel_e_filter.txt')
+def gen_relation(relation, articles_dir, use_db=False):
+    articles_content = get_articles_content(articles_dir, use_db)
+    rst_articles_pos, rst_articles_neg = extract_articles_relation(
+        articles_content, relation, 10000)
+    relation_name = relation.__name__.split('.')[-1]
+    ner_pos_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+                          f'ner_{relation_name}_pos.txt')
+    ner_neg_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+                          f'ner_{relation_name}_neg.txt')
+    save_ner_data(rst_articles_pos, rst_articles_neg, 1000, ner_pos_fp,
+                  ner_neg_fp)
+    classify_pos_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+                          f'classify_{relation_name}_pos.txt')
+    classify_neg_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+                          f'classify_{relation_name}_neg.txt')
+    save_classify_data(rst_articles_pos, rst_articles_neg, 1000, classify_pos_fp,
+                  classify_neg_fp)
 
 
 if __name__ == '__main__':
-    ner_data_fn = 'data_parallel.txt'
-    ner_data_neg_fn = 'data_parallel_neg.txt'
-    new_ner_data_fn = 'data_parallel_e.txt'
-    # add_pos_events(new_ner_data_fn)
-    # gen_neg_by_other(r_parallel)
-    filter_events()
-    pass
+    # ner_data_fn = 'data_parallel.txt'
+    # ner_data_neg_fn = 'data_parallel_neg.txt'
+    # new_ner_data_fn = 'data_parallel_e.txt'
+    # # add_pos_events(new_ner_data_fn)
+    # # gen_neg_by_other(r_parallel)
+    # filter_events()
 
-    # for id_, content in articles_zh[:5]:
-    #     rsts = extract_articles(content, relation)
-    #     rst_articles.extend(rsts)
-    # save_content(''.join(rst_articles), f'data_{relation.__name__}.txt')
+    relation = r_parallel

@@ -25,7 +25,7 @@ ss0 = tf.Session(graph=g0)
 TRAINED_MODEL_PATH = generate_trained_model_path(CONFIG.trained_model_dir, CONFIG.trained_model_name)
 
 # 加载训练集和验证集
-train_line, test_line = get_data(CONFIG.total_data_path)
+train_line, test_line = get_data(CONFIG.total_data_path, CONFIG.relation)
 
 # 加载bert分字器
 TOKENIZER = get_bert_tokenizer(CONFIG.dict_path)
@@ -77,7 +77,7 @@ class Evaluate(Callback):
         if f1 > self.best:
             self.best = f1
             model.save(TRAINED_MODEL_PATH, include_optimizer=True)
-        logger.info(f'epoch: {epoch}, p: {p}.4f, r: {r}.4f, f1: {f1}.4f, best: {self.best}.4f\n')
+        logger.info(f'epoch: {epoch}, p: {p}, r: {r}, f1: {f1}, best: {self.best}\n')
 
     def evaluate(self):
         """

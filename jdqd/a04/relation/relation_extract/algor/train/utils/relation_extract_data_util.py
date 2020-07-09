@@ -11,52 +11,37 @@ import random
 from keras.utils import to_categorical
 from jdqd.common.relation_com.model_utils import seq_padding
 
-def get_data(total_data_path):
+def get_data(total_data_path, relation):
     '''
     传入数据路径，输出符合模型输入格式的训练集与测试集数据
     :param total_data_path: 全部数据路径
     return train_line(list), test_line(list)
     '''
     causality = []
-    with open(total_data_path+'/samples_causality_add.txt', encoding='utf-8') as f:
+    with open(total_data_path + '/' + f'{relation}_pos.txt', encoding='utf-8') as f:
         fs = list(set(f.readlines()))
         for line in fs:
-            if len(line.strip().split('\t')) == 6 and '' not in line.strip().split('\t')[4].split('|') and '' not in line.strip().split('\t')[5].split('|'):
+            left_len = len(line.strip().split('\t')[4].split('丨'))
+            right_len = len(line.strip().split('\t')[5].split('丨'))
+            if left_len == right_len == 1:
                 causality.append((line.strip().split('\t')[4].replace('|',''), line.strip().split('\t')[5].replace('|',''), to_categorical(1, 3)))
                 causality.append((line.strip().split('\t')[5].replace('|',''), line.strip().split('\t')[4].replace('|',''), to_categorical(2, 3)))
-    
-    with open(total_data_path+'/samples_causality_pos_svos.txt', encoding='utf-8') as f:
-        fs = list(set(f.readlines()))
-        for line in fs:
-            if len(line.strip().split('\t')) == 5 and '' not in line.strip().split('\t')[3].split('|') and '' not in line.strip().split('\t')[4].split('|'):
-                causality.append((line.strip().split('\t')[3].replace('|',''), line.strip().split('\t')[4].replace('|',''), to_categorical(1, 3)))
-                causality.append((line.strip().split('\t')[4].replace('|',''), line.strip().split('\t')[3].replace('|',''), to_categorical(2, 3)))
-    
-              
+
     causality_neg = []
-    with open(total_data_path+'/samples_causality_svos_neg.txt', encoding='utf-8') as f:
+    with open(total_data_path + '/' + f'{relation}_neg_class.txt', encoding='utf-8') as f:
         fs = list(set(f.readlines()))
         for line in fs:
-            if len(line.strip().split('\t')) == 3 and '' not in line.strip().split('\t')[1].split('|') and '' not in line.strip().split('\t')[2].split('|'):
-                causality_neg.append((line.strip().split('\t')[1].replace('|',''), line.strip().split('\t')[2].replace('|',''), to_categorical(0, 3)))
-    
-    with open(total_data_path+'/samples_causality_neg_add.txt', encoding='utf-8') as f:
-        fs = list(set(f.readlines()))
-        for line in fs:
-            if len(line.strip().split('\t')) == 3 and '' not in line.strip().split('\t')[1].split('|') and '' not in line.strip().split('\t')[2].split('|'):
-                causality_neg.append((line.strip().split('\t')[1].replace('|',''), line.strip().split('\t')[2].replace('|',''), to_categorical(0, 3)))
-    
+            lens = len(line.strip().split('\t')[1].split('丨'))
+            if lens >= 2:
+                causality_neg.append((line.strip().split('\t')[1].split('丨')[0].replace('|',''), line.strip().split('\t')[1].split('丨')[1].replace('|',''), to_categorical(0, 3)))
+
     causas_train = causality + random.sample(causality_neg, len(causality))
     
     random_order = list(range(len(causas_train)))
     np.random.shuffle(random_order)
     train_line = [causas_train[j] for i, j in enumerate(random_order) if i % 5 != 0]
-    result_1 = pd.read_csv(total_data_path+'/result1.csv', encoding='gbk')
-    for i in range(len(result_1)):
-        train_line.append((result_1.iloc[i,2], result_1.iloc[i,3], to_categorical(result_1.iloc[i,4],3)))
     test_line = [causas_train[j] for i, j in enumerate(random_order) if i % 5 == 0]
     return train_line, test_line
-
 
 class data_generator:
     """

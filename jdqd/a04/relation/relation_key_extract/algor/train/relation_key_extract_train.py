@@ -31,7 +31,7 @@ TRAINED_MODEL_PATH = generate_trained_model_path(CONFIG.trained_model_dir, CONFI
 label, _label = get_label(CONFIG.label_path)
 
 # 加载训练集和验证集
-input_train, result_train, input_test, result_test = get_data(CONFIG.train_data_path, CONFIG.dev_data_path)
+input_train, result_train, input_test, result_test = get_data(CONFIG.train_data_path, CONFIG.dev_data_path, CONFIG.relation)
 
 # 加载bert分字器
 TOKENIZER = get_bert_tokenizer(CONFIG.dict_path)
@@ -145,7 +145,7 @@ class Evaluate(Callback):
         if f1 > self.best:
             self.best = f1
             model.save(TRAINED_MODEL_PATH, include_optimizer=True)
-        logger.info(f'epoch: {epoch}, f1: {f1}.4f, precision: {precision}.4f, recall: {recall}.4f, best f1: {self.best}.4f\n' % (epoch, f1, precision, recall, self.best))
+        logger.info(f'epoch: {epoch}, f1: {f1}, precision: {precision}, recall: {recall}, best f1: {self.best}\n')
 
     @staticmethod
     def flat_lists(lists):
