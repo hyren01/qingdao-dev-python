@@ -270,8 +270,8 @@ def save_classify_data(rst_articles_pos, rst_articles_neg, neg_upper_bound,
             if i > neg_upper_bound:
                 break
             try:
-                events = get_events(rp[0])
-                line = rp + [events]
+                events = get_events(rp)
+                line = [rp, events]
                 line = '\t'.join(line) + '\n'
                 fcn.write(line)
             except Exception as e:
@@ -304,9 +304,9 @@ def gen_relation(relation, articles_dir, use_db=False):
     rst_articles_pos, rst_articles_neg = extract_articles_relation(
         articles_content, relation, 10000)
     relation_name = relation.__name__.split('.')[-1]
-    ner_pos_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+    ner_pos_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_key_extract',
                           f'ner_{relation_name}_pos.txt')
-    ner_neg_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_extract',
+    ner_neg_fp = cat_path(ALGOR_PRETRAIN_ROOT, 'relation_key_extract',
                           f'ner_{relation_name}_neg.txt')
     save_ner_data(rst_articles_pos, rst_articles_neg, 1000, ner_pos_fp,
                   ner_neg_fp)
@@ -325,5 +325,5 @@ if __name__ == '__main__':
     # # add_pos_events(new_ner_data_fn)
     # # gen_neg_by_other(r_parallel)
     # filter_events()
-
+    gen_relation(r_further, articles_db_path, True)
     relation = r_parallel

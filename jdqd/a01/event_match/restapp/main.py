@@ -10,10 +10,12 @@ from flask_cors import CORS
 from queue import Queue
 import traceback
 import threading
+from feedwork.utils import logger
 
 app = Flask(__name__)
 CORS(app)
 
+# 事件识别主队列
 main_queue = Queue(maxsize=5)
 
 
@@ -46,11 +48,11 @@ def infer():
     if request.method == "POST":
         title = request.form.get("title", type=str, default=None)
         content = request.form.get("content", type=str, default=None)
-        sample_type = request.form.get("sample_type", type=str, default='parts')
+        sample_type = request.form.get("sample_type", type=str, default='abstract')
     else:
         title = request.args.get("title", type=str, default=None)
         content = request.args.get("content", type=str, default=None)
-        sample_type = request.args.get("sample_type", type=str, default='parts')
+        sample_type = request.args.get("sample_type", type=str, default='abstract')
 
     if not content or content is None:
         return error_resp('文章内容为空')
@@ -60,6 +62,7 @@ def infer():
     # 创建子队列，从预测模块获取处理信息
     sub_queue = Queue()
     # 使用主队列将请求内容以及子队列传入预测模块
+    logger.info("接收到前端请求开始进行事件识别。。。")
     main_queue.put((title, content, sample_type, sub_queue))
     # 使用子队列从预测模块获取请求信息以及预测数据
     success, pred = sub_queue.get()
@@ -75,22 +78,28 @@ def worker():
     预测模块，对主队列传入的文本进行处理及事件匹配预测，通过子队列将结果返回
     :return: None
     """
-    from jdqd.a01.event_match.algor.predict.execute import load_match_model, get_events, get_predict_result
-    # 加载事件匹配模型
-    model = load_match_model()
-    # 获取事件列表
-    event_list = get_events()
+    try:
+        from jdqd.a01.event_match.algor.predict.execute import load_match_model, get_events, get_predict_result
+
+        # 加载事件匹配模型
+        model = load_match_model()
+        # 获取事件列表
+        event_list = get_events()
+    except:
+        trac = traceback.format_exc()
+        logger.error(trac)
+        raise trac
 
     while True:
 
         # 获取数据和子队列
+        logger.info("从主队列获取信息。。。")
         title, content, sample_type, sub_queue = main_queue.get()
         try:
-
+            logger.info("开始进行事件识别。。。")
             title_pred, content_pred = get_predict_result(model, event_list, title, content, sample_type)
 
             sub_queue.put((True, [title_pred, content_pred]))
-
         except:
             # 通过子队列发送异常信息
             trace = traceback.format_exc()
@@ -100,6 +109,7 @@ def worker():
 
 
 if __name__ == '__main__':
+    # 事件识别线程
     t = threading.Thread(target=worker)
     t.daemon = True
     t.start()

@@ -18,17 +18,17 @@ def get_data(total_data_path, relation):
     return train_line(list), test_line(list)
     '''
     causality = []
-    with open(total_data_path + '/' + f'{relation}_pos.txt', encoding='utf-8') as f:
+    with open(total_data_path + '/' + f'classify_{relation}_pos.txt', encoding='utf-8') as f:
         fs = list(set(f.readlines()))
         for line in fs:
             left_len = len(line.strip().split('\t')[4].split('丨'))
             right_len = len(line.strip().split('\t')[5].split('丨'))
-            if left_len == right_len == 1:
+            if left_len == right_len == 1 and line.strip().split('\t')[4].replace('|','') != '' and line.strip().split('\t')[5].replace('|','') != '':
                 causality.append((line.strip().split('\t')[4].replace('|',''), line.strip().split('\t')[5].replace('|',''), to_categorical(1, 3)))
                 causality.append((line.strip().split('\t')[5].replace('|',''), line.strip().split('\t')[4].replace('|',''), to_categorical(2, 3)))
 
     causality_neg = []
-    with open(total_data_path + '/' + f'{relation}_neg_class.txt', encoding='utf-8') as f:
+    with open(total_data_path + '/' + f'classify_{relation}_neg.txt', encoding='utf-8') as f:
         fs = list(set(f.readlines()))
         for line in fs:
             lens = len(line.strip().split('\t')[1].split('丨'))

@@ -15,6 +15,8 @@ class EventPredict(object):
         self._pca = None
         self._days = None
 
+        self._model_dir = ''
+
     @property
     def model_name(self):
         return self._model_name
@@ -54,3 +56,11 @@ class EventPredict(object):
     @days.setter
     def days(self, days: int):
         self._days = days
+
+    @property
+    def model_dir(self):
+        return self._model_dir
+
+    @model_dir.setter
+    def model_dir(self, model_dir):
+        self._model_dir = model_dir

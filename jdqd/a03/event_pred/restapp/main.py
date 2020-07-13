@@ -42,11 +42,11 @@ def build_model():
         events_set, events_p_oh = get_event(date, event_model.event_type)
         # 2、训练模型。根据PCA降维的特征选择以及max_input_len、min_input_len进行组合，每个组合都会训练出一个模型并且记录到数据库；
         update_model_status(model_id, ModelStatus.PROCESSING.value)     # 模型状态修改为运行中
-        sub_model_dirs, params_list, detail_ids = train_over_hyperparameters(data, date, events_set, events_p_oh,
-                                                                             event_model)
+        sub_model_dirs, params_list, detail_ids, model_dir = train_over_hyperparameters(data, date, events_set,
+                                                                                        events_p_oh, event_model)
         # 3、评估模型。对每个训练出的模型进行评估，评估结果记录到数据库。
         evaluate_sub_models(data, date, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
-                            event_model.evaluation_start_date, event_model.evaluation_end_date)
+                            event_model.evaluation_start_date, event_model.evaluation_end_date, model_dir)
         model_train_finish(model_id, ModelStatus.SUCCESS.value)     # 模型状态修改为完成/成功
         logger.info(f"当前模型id<{model_id}>的模型构建完成")
         return {"success": True, "model_path": sub_model_dirs}
@@ -78,7 +78,7 @@ def model_predict():
         # 2、模型预测。使用指定的模型及数据集进行预测，预测结果记录到数据库。
         update_task_status(task_id, ModelStatus.PROCESSING.value)   # 任务状态修改为运行中
         last_date_data_pred = web_predict(event_task.model_id, data, dates, events_set, task_id,
-                                          event_task.sample_start_date)
+                                          event_task.sample_start_date, event_task.model_dir)
         predict_task_finish(task_id, last_date_data_pred, ModelStatus.SUCCESS.value)    # 任务状态修改为完成/成功
         logger.info(f"模型id<{event_task.model_id}>的预测完成")
         return {"success": True}

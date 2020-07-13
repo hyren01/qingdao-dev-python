@@ -55,8 +55,8 @@ def get_data(train_path, test_path, relation):
     :param test_path: 测试集语料路径
     return input_train:训练集输入句子, result_train:训练集输入句子序列标签 input_test:测试集输入句子, result_test:测试集输入句子序列标签
     """
-    input_train, result_train = PreProcessData(train_path + '/' + f'{relation}.train_line.txt')
-    input_test, result_test = PreProcessData(test_path+ '/' + f'{relation}.test _line.txt')
+    input_train, result_train = PreProcessData(train_path + '/' + f'ner_{relation}_train_line.txt')
+    input_test, result_test = PreProcessData(test_path+ '/' + f'ner_{relation}_test_line.txt')
     return input_train, result_train, input_test, result_test
 
 

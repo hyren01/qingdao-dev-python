@@ -25,6 +25,7 @@ class EventTask(object):
         self._predict_end_date = ''
 
         self._event_type = ''
+        self._model_dir = ''
 
     @property
     def task_id(self):
@@ -146,3 +147,10 @@ class EventTask(object):
     def event_type(self, event_type):
         self._event_type = event_type
 
+    @property
+    def model_dir(self):
+        return self._model_dir
+
+    @model_dir.setter
+    def model_dir(self, model_dir):
+        self._model_dir = model_dir

@@ -140,8 +140,6 @@ def data_process(content):
         # 剔除用户名密码名
         content = re.sub('[a-z0-9_-]{3,16}', '', content)
         content = re.sub('[a-z0-9_-]{6,18}', '', content)
-        # 剔除HTML标签
-        content = re.sub('<([a-z]+)([^<]+)*(?:>(.*)<\/\1>|\s+\/>)', '', content)
         # 剔除网络字符，剔除空白符
         content = content.strip().strip('\r\n\t').replace(u'\u3000', '').replace(u'\xa0', '')
         content = content.replace('\t', '').replace(' ', '').replace('\n', '').replace('\r', '')

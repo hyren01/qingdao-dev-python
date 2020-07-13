@@ -8,6 +8,7 @@ import os
 import feedwork.AppinfoConf as appconf
 from feedwork.utils import logger
 from feedwork.utils.FileHelper import cat_path
+from feedwork.utils.UuidHelper import guid
 from datetime import timedelta, datetime
 from jdqd.a03.event_pred.algor.train import train_model
 from jdqd.a03.event_pred.algor.common import preprocess
@@ -19,7 +20,7 @@ from jdqd.a03.event_pred.algor.predict.predict import predict_sample
 
 
 # 模型存放路径
-models_dir = cat_path(appconf.ALGOR_MODULE_ROOT, 'event_pred')
+base_model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, 'event_pred')
 date_formatter = '%Y-%m-%d'
 
 
@@ -42,10 +43,14 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
       每个模型对应的超参数列表
     """
     logger.info('开始训练模型')
-
-    if not os.path.exists(models_dir):
-        os.makedirs(models_dir)
-    pca_dir = models_dir
+    # 每次训练生成一个对应的目录
+    new_model_dir = cat_path(base_model_dir, guid())
+    if not os.path.exists(new_model_dir):
+        os.makedirs(new_model_dir)
+    pca_dir = new_model_dir
+    # if not os.path.exists(models_dir):
+    #     os.makedirs(models_dir)
+    # pca_dir = models_dir
     sub_model_dirs = []
     sub_model_names = []
     lag_dates = []
@@ -63,7 +68,7 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
             pcas.append(i)
             sub_model_name = f'{event_model.model_name}-{j}-{event_model.days}-{i}'
             sub_model_names.append(sub_model_name)
-            sub_model_dir = cat_path(models_dir, sub_model_name)
+            sub_model_dir = cat_path(new_model_dir, sub_model_name)
             if not os.path.exists(sub_model_dir):
                 os.makedirs(sub_model_dir)
             sub_model_dirs.append(sub_model_dir)
@@ -78,13 +83,13 @@ def train_over_hyperparameters(data, dates, events_set, events_p_oh, event_model
     logger.info('训练完成, 模型存入数据库')
 
     detail_ids = pgsql.model_train_done(event_model.model_id, lag_dates, pcas, sub_model_dirs, sub_model_names,
-                                        outputs_list, events_set)
+                                        outputs_list, events_set, new_model_dir)
 
-    return sub_model_dirs, params_list, detail_ids
+    return sub_model_dirs, params_list, detail_ids, new_model_dir
 
 
 def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set, eval_start_date,
-                        eval_end_date):
+                        eval_end_date, model_dir):
     """
     用指定的模型对指定的数据进行评估。
 
@@ -103,7 +108,7 @@ def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, ev
 
     # 评估模型. scores: 子模型综合评分列表; events_num: 测试机事件个数
     scores, events_num = meval(data, dates, detail_ids, sub_model_dirs, params_list, events_p_oh, events_set,
-                               n_classes, eval_start_date, eval_end_date)
+                               n_classes, eval_start_date, eval_end_date, model_dir)
 
     logger.info('模型评估结束, 筛选top模型并入库')
     scores.sort(key=lambda x: x[0], reverse=True)
@@ -112,7 +117,7 @@ def evaluate_sub_models(data, dates, detail_ids, sub_model_dirs, params_list, ev
     pgsql.model_eval_done(top_scores, events_num)
 
 
-def web_predict(model_id, data, dates, events_set, task_id, pred_start_date):
+def web_predict(model_id, data, dates, events_set, task_id, pred_start_date, model_dir):
     """
     # TODO 这个注释跟没写一样，下面的参数没更新
     通过页面传入的参数使用指定模型进行预测, 并将预测结果存入数据库.
@@ -129,14 +134,14 @@ def web_predict(model_id, data, dates, events_set, task_id, pred_start_date):
     num_classes = len(events_set)
 
     preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred, pred_detail_ids, last_date_data_pred = \
-        __predict_by_sub_models(data, dates, event_predict_array, pred_start_date, num_classes, task_id)
+        __predict_by_sub_models(data, dates, event_predict_array, pred_start_date, num_classes, task_id, model_dir)
     if pred_detail_ids:
         pgsql.insert_pred_result(preds, preds_all_days, dates_pred, dates_pred_all, dates_data_pred,
                                  pred_detail_ids, events_set, task_id)
     return last_date_data_pred
 
 
-def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_date, num_classes, task_id):
+def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_date, num_classes, task_id, model_dir):
     """
     使用各个子模型进行预测。
     Args:
@@ -177,8 +182,8 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
         n_pca = event_predict.pca
         detail_id = event_predict.detail_id
 
-        model_dir = cat_path(models_dir, sub_model)
-        values_pca = pp.apply_pca(n_pca, models_dir, data, True)
+        sub_model_dir = cat_path(event_predict.model_dir, sub_model)
+        values_pca = pp.apply_pca(n_pca, model_dir, data, True)
         # inputs_data指的是模型输入样本、output_dates指的是从开始预测日期起至数据中最大日期范围内的所有日期
         inputs_data, output_dates = pp.gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
         # 取样本数据中最大的日期，再往后推1天  TODO dates[-1]要求日期必须升序排序
@@ -218,7 +223,7 @@ def __predict_by_sub_models(data, dates, event_predict_array: list, pred_start_d
         # 预测日期, 包含第一天以后日期
         dates_pred_all_model = [[(dd + timedelta(t)) for t in range(1, output_len + 1)] for dd in dates_data]
 
-        encoder, decoder = load_models(model_dir)
+        encoder, decoder = load_models(sub_model_dir)
         pred = model_predict(encoder, decoder, inputs_data, output_len, num_classes)
 
         pred_one = [p[0] for p in pred]  # 在预测到最后一天之前的每一天预测的结果都只有第一天可用

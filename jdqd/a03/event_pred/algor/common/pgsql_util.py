@@ -51,7 +51,7 @@ def model_train_finish(model_id, status):
     __modify(sql, (status, sys_date(sys_date_formatter), sys_time(sys_time_formatter), model_id))
 
 
-def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set):
+def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set, model_dir):
     """
     更新t_event_model_file、t_event_model_detail、t_event_model_tran表的数据。
 
@@ -88,9 +88,13 @@ def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names,
             for e in events_set:
                 tran_id = UuidHelper.guid()
                 event_num = events_num[e]
-                param = (tran_id, e, event_num, detail_id, ModelStatus.SUCCESS.value)
+                param = (tran_id, e, event_num, detail_id, DataStatus.SUCCESS.value)
                 params.append(param)
         db.executemany(sql, params)
+
+        # 分事件模型信息入库
+        sql = "UPDATE t_event_model SET model_dir = %s WHERE model_id = %s"
+        db.execute(sql, (model_dir, model_id))
 
         db.commit()
         return detail_ids
@@ -175,7 +179,7 @@ def insert_into_model_train(detail_ids, outputs_list, events_set, status):
 
 
 def insert_model_test(event, event_num, false_rate, recall_rate, false_alarm_rate, tier_precision, tier_recall, bleu,
-                      status, detail_id):
+                      detail_id):
     """
     记录模型评估信息
     Args:
@@ -187,14 +191,13 @@ def insert_model_test(event, event_num, false_rate, recall_rate, false_alarm_rat
         tier_precision: 头部精确率, 即将预测值降序排序后, 头部(前n个)预测值中预测正确的结果数所占的比例
         tier_recall: 头部召回率, 即将预测值降序排序后, 头部(前n个)预测值中预测正确的结果数与真实正例个数的比值
         bleu: bleu指标
-        status: 模型评估状态
         detail_id: 子模型对应的id
     """
     test_id = UuidHelper.guid()
     sql = "insert into t_event_model_test(test_id, event_name, num, false_rate, recall_rate, false_alarm_rate, " \
           "tier_precision, tier_recall, bleu, status, detail_id) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     param = (test_id, event, event_num, false_rate, recall_rate, false_alarm_rate, tier_precision, tier_recall, bleu,
-             status, detail_id)
+             DataStatus.SUCCESS.value, detail_id)
 
     __modify(sql, param, '插入子模型评估结果失败')
 
@@ -223,16 +226,18 @@ def insert_model_tot(top_scores, events_num):
 
 def query_sub_models_by_model_id(model_id):
     """
-    根据模型编号查询出子模型。
+    根据模型编号查询出综合排名前10的子模型。
     :param model_id:  模型编号
     :return array. t_event_model_detail表数据
     """
 
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t2.days FROM t_event_model_detail t1 " \
-              "JOIN t_event_model t2 ON t1.model_id = t2.model_id "\
-              "WHERE t1.model_id = %s"
+        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t2.days, t2.model_dir " \
+              "FROM t_event_model_detail t1 " \
+              "JOIN t_event_model t2 ON t1.model_id = t2.model_id " \
+              "JOIN t_event_model_tot t3 ON t1.detail_id=t3.detail_id "\
+              "WHERE t1.model_id = %s order by t3.score desc limit 10 "
         event_predict = db.query(sql, (model_id,), result_type=QueryResultType.BEAN, wild_class=EventPredict)
         if len(event_predict) < 1:
             raise RuntimeError(f"Query t_event_model_detail error, the {model_id} cannot get multi-row")
@@ -384,7 +389,8 @@ def query_event_table_2pandas(table_name, event_col, date_col):
     try:
         sql = f"SELECT {event_col}, CAST({date_col} AS VARCHAR) AS {date_col} FROM {table_name} " \
             f"WHERE qssj IS NOT NULL AND ({event_col} IS NOT NULL AND {event_col} <> '') AND " \
-            f"({date_col} IS NOT NULL AND {date_col} <> '') AND LENGTH({date_col}) > 8 ORDER BY {date_col} ASC"
+            f"({date_col} IS NOT NULL AND CAST({date_col} AS VARCHAR) <> '') AND " \
+              f"LENGTH(CAST({date_col} AS VARCHAR)) > 8 ORDER BY {date_col} ASC"
         result = db.query(sql, (), result_type=QueryResultType.PANDAS)
         return result
     except Exception as e:
@@ -448,8 +454,8 @@ def query_teventtask_by_id(task_id):
     """
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT t2.event_type, t1.* FROM t_event_task t1 JOIN t_event_model t2 ON t1.model_id = t2.model_id " \
-              "WHERE t1.task_id = %s"
+        sql = "SELECT t2.event_type, t2.model_dir, t1.* FROM t_event_task t1 JOIN " \
+              "t_event_model t2 ON t1.model_id = t2.model_id WHERE t1.task_id = %s"
         t_event_task = db.query(sql, (task_id,), result_type=QueryResultType.BEAN, wild_class=EventTask)
         if len(t_event_task) != 1:
             raise RuntimeError(f"Query t_event_task error, the {task_id} cannot get only one row")

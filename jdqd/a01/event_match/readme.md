@@ -2,7 +2,7 @@
 
     - 端口：38081
     
-    - 本机调试：127.0.0.1:38081/ematch?title=日本派遣宙斯盾军舰赶赴东部海域.&content=
+    - 本机调试：127.0.0.1:38081/ematch
     
     - 对输入的中文文章标题以及内容进行事件匹配，输出匹配结果
     
@@ -10,7 +10,7 @@
     
             "content":"",
             
-            "sample_type:""(也可以不用传，底层默认parts)[parts abstract triples]
+            "sample_type:""(也可以不用传，底层默认abstract)[parts abstract all]
             
             }
     
@@ -30,6 +30,20 @@
                          "ratio": 0.753}]}],
                      
             "message": "success"}
+            
+            
+    - 本机调试：127.0.0.1:38083/abstract
+    
+    - 输入:{"article":"",
+                            
+            }
+    
+    
+    - 输出: {"status": "success",
+            
+             "results": []
+            }
+            
             
 ## 使用前准备
 

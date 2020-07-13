@@ -140,6 +140,7 @@ def get_predict_result(model, event_list: list, title: str, content: str, sample
         :return: results(list)相似度列表
         """
         results = []
+        logger.info("开始对传入的内容进行事件识别。。。")
         for x_true, y_true in data:
             # 调用模型，预测样本相似度[batch, 2]
             y_pred = model.predict(x_true)
@@ -148,6 +149,7 @@ def get_predict_result(model, event_list: list, title: str, content: str, sample
 
         return results
 
+    logger.info("开始对标题进行事件识别。。。")
     # 清洗标题
     title = data_process(title)
     title = supplement(title)
@@ -157,10 +159,12 @@ def get_predict_result(model, event_list: list, title: str, content: str, sample
     # 获取以标题构造的样本[(event, title),(event, title),(event, title)]
     title_samples = generate_samples(event_list, [title])
 
+
+    logger.info("开始对文章内容进行摘要。。。")
     # 判断文章样本类型，根据类型生成样本
     if sample_type == 'abstract':
         # 抽取文章摘要句子
-        summary_sentences = get_abstract(content)
+        summary_sentences = get_abstract(content, pre_config.abstract_n)
         content_samples = generate_samples(event_list, summary_sentences)
     elif sample_type == "all":
         # 使用文章中的每个句子做匹配对

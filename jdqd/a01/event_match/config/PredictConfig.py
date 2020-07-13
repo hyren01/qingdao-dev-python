@@ -21,3 +21,5 @@ match_model_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, match_model_path)
 # 事件列表地址
 allevent_path = "event_match/data/allevent"
 allevent_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, allevent_path)
+# 摘要句子数量
+abstract_n = 2
