@@ -3,26 +3,32 @@
 
 import re
 import langid
+from jdqd.a04.event_interface.services.general import main_en, main_zdxj, main_article_clean
+from jdqd.a04.event_interface.services.event_graph.helper.rdms_database import get_article
 
 
-def clear_web_data(content):
+def clear_web_data():
     """
     清理文本中的HTML、固定格式字符等。
     :param content: string.文本。
     :return string.清洗完的文本
     """
-    if content is None or content == '':
-        return ''
-    content = re.sub('<[^<]+?>', '', content).replace('&nbsp;', '')  # 可以考虑正则穷举HTML标签进行替换
-    content = re.sub(r'&#\d+;', '', content).replace('\n', '')
-    content = re.sub('【[^【]+?】', '', content).strip()
-    language_id = langid.classify(content)[0]
-    if language_id in ('ja', 'zh'):  # 日语及中文
-        content = __clear_unnecessary_content(content, True)
-    else:
-        content = __clear_unnecessary_content(content, False)
-
-    return content
+    content = get_article()
+    for article_id, content in zip(content.article_id, content.content):
+        if content is None or content == '':
+            return ''
+        content = re.sub('<[^<]+?>', '', content).replace('&nbsp;', '')  # 可以考虑正则穷举HTML标签进行替换
+        content = re.sub(r'&#\d+;', '', content).replace('\n', '')
+        content = re.sub('【[^【]+?】', '', content).strip()
+        language_id = langid.classify(content)[0]
+        if language_id in ('ja', 'zh'):  # 日语及中文
+            content = __clear_unnecessary_content(content, True)
+        else:
+            content = __clear_unnecessary_content(content, False)
+        main_article_clean.article_clean(article_id, content)
+        main_en.article_en(article_id)
+        main_zdxj.article_zdxj(article_id)
+    #return content
 
 
 def __clear_unnecessary_content(content, is_chinese_or_japanese):
@@ -55,7 +61,6 @@ def __clear_unnecessary_content(content, is_chinese_or_japanese):
         content = content.split(" (End) ")
         del content[len(content) - 1]
         content = "".join(content)
-
     return content
 
 

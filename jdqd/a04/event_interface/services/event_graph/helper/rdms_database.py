@@ -368,10 +368,7 @@ def get_article_list(event_id):
                 article_id_arr.append(ids)
             # 查询文章信息
             article = db.query(
-                "select a.article_id,b.title as translated_title,b.content_summary,a.spider_time,a.source "
-                "from t_article_msg a "
-                "left join t_article_msg_zh b on a.article_id=b.article_id "
-                "where a.article_id in (%s) limit 10" % ','.join(
+                "select article_id,title as translated_title,title from t_article_msg_zh where article_id in (%s)" % ','.join(
                     ['%s'] * len(article_id_arr)), article_id_arr, QueryResultType.JSON)
             # 查询文章关联的事件，用于前端连线
             for a in article:
@@ -420,6 +417,20 @@ def get_article_info(article_id, event_id):
     finally:
         db.close()
     return article, sentence
+
+
+def get_article():
+    db = DatabaseWrapper()
+    try:
+        article = db.query(f"select article_id,content from t_article_msg "
+                           f"where is_clean='0'")
+
+        return article
+    except Exception as e:
+        raise RuntimeError(e)
+    finally:
+        db.close()
+    return article
 
 # if __name__ == '__main__':
 #     # db = Database()

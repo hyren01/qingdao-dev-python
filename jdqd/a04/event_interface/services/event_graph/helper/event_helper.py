@@ -186,78 +186,75 @@ def __parsed_sentence_and_insert2db(graph_db, content_id, content, event_tag, up
             state = event["state"]
             cameo = event["cameo"]
             triggerloc_index = event["triggerloc_index"]
-            # 事件抽取存在问题，这边需要判断一下主谓宾的长度
-            if len(subject) <= 50 and len(verb) <= 50 and len(object) <= 50 and len(event_datetime) <= 20 and len(
-                    event_location) <= 40:
-                short_sentence = subject + negative_word + verb + object
-                subject = ",".join(subject) if type(subject) == list else subject
-                verb = ",".join(verb) if type(verb) == list else verb
-                object = ",".join(object) if type(object) == list else object
-                # 根据主语、谓语、宾语、否定词匹配事件表（字符匹配）
-                check_event_info, event_infos = __check_event_info_by_char(subject, verb, object, negative_word,
-                                                                           update_synonyms)
-                namedentity_location_str = ",".join(namedentity_location)
-                namedentity_organization_str = ",".join(namedentity_organization)
-                namedentity_person_str = ",".join(namedentity_person)
-                # 事件匹配成功，则进行匹配属性表（字符匹配）
-                if check_event_info:
-                    for event_info in event_infos:
-                        event_id_list.append(event_info['event_id'])
-                        event_list.append(event_info['shorten_sentence'])
-                        event_id = event_info['event_id']
-                        logging.info("字符匹配事件成功，事件id为：" + event_id)
-                        check_event_attribute, ebm_event_attributes = __check_event_attribute_by_char(
-                            event_id, event_datetime, event_location,
-                            namedentity_organization, namedentity_person)
-                        # 若字符属性匹配成功，意味着该事件已经存在，仅仅记录句子与这些属性的关系
-                        if check_event_attribute:
-                            for event_attribute in ebm_event_attributes:
-                                attribute_id = event_attribute['relation_id']
-                                rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
-                        else:
-                            # 若字符属性匹配失败，则认为该事件为新事件，记录到事件属性表、事件句子属性关系表
-                            attribute_id = rdms_service.insert_event_attribute(sentiment_analysis,
-                                                                               event_datetime, event_location, state,
-                                                                               namedentity_location_str,
-                                                                               namedentity_organization_str,
-                                                                               namedentity_person_str, "", event_id)
+            short_sentence = subject + negative_word + verb + object
+            subject = ",".join(subject) if type(subject) == list else subject
+            verb = ",".join(verb) if type(verb) == list else verb
+            object = ",".join(object) if type(object) == list else object
+            # 根据主语、谓语、宾语、否定词匹配事件表（字符匹配）
+            check_event_info, event_infos = __check_event_info_by_char(subject, verb, object, negative_word,
+                                                                       update_synonyms)
+            namedentity_location_str = ",".join(namedentity_location)
+            namedentity_organization_str = ",".join(namedentity_organization)
+            namedentity_person_str = ",".join(namedentity_person)
+            # 事件匹配成功，则进行匹配属性表（字符匹配）
+            if check_event_info:
+                for event_info in event_infos:
+                    event_id_list.append(event_info['event_id'])
+                    event_list.append(event_info['shorten_sentence'])
+                    event_id = event_info['event_id']
+                    logging.info("字符匹配事件成功，事件id为：" + event_id)
+                    check_event_attribute, ebm_event_attributes = __check_event_attribute_by_char(
+                        event_id, event_datetime, event_location,
+                        namedentity_organization, namedentity_person)
+                    # 若字符属性匹配成功，意味着该事件已经存在，仅仅记录句子与这些属性的关系
+                    if check_event_attribute:
+                        for event_attribute in ebm_event_attributes:
+                            attribute_id = event_attribute['relation_id']
                             rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
-                            # 若字符属性匹配失败，则进行NN网络属性匹配（NN网络属性匹配为空实现）
-                            check_event_attribute = __check_event_attribute_by_nn(event_location, event_datetime,
-                                                                                  namedentity_organization,
-                                                                                  namedentity_person)
-                            # 若NN属性匹配成功，则记录到事件属性校验表（目前无实现）
-                            if check_event_attribute:
-                                pass
-                            else:
-                                pass
-                else:
-                    # 字符事件匹配失败，则记录事件信息表、事件属性表、事件句子属性表、图数据库
-                    event_id, event = __storage_new_event(subject, verb, object, short_sentence, cameo,
-                                                          triggerloc_index,
-                                                          sentiment_analysis, event_datetime, negative_word, state,
-                                                          event_location,
-                                                          namedentity_location_str, namedentity_organization_str,
-                                                          namedentity_person_str, graph_db, sentence_id, event_tag)
-                    event_list.append(event)
-                    event_id_list.append(event_id)
-                    # 字符事件匹配失败，则进行NN事件匹配
-                    check_event_info, event_infos = __check_event_info_by_nn(short_sentence, cameo)
-                    # 若NN事件匹配成功，记录到事件信息镜像校验表
-                    if check_event_info:
-                        copy_event_id = event_id
-                        for event_info in event_infos:
-                            event_id = event_info["event_id"]
-                            rdms_service.insert_event_copy(copy_event_id, event_id)
                     else:
-                        # 若NN事件匹配失败，则保存神经网络向量
-                        data = {"short_sentence": short_sentence, "cameo": cameo, "event_id": event_id}
-                        res = http_post(data, config.event_vector_uri)
-                        response = json.loads(res)
-                        if response["status"] != 'success':
-                            logging.warning("调用事件向量存储接口失败：" + response["message"])
-        # 上面代码中出错后不需要回滚
-        # rdms_db.commit()
+                        # 若字符属性匹配失败，则认为该事件为新事件，记录到事件属性表、事件句子属性关系表
+                        attribute_id = rdms_service.insert_event_attribute(sentiment_analysis,
+                                                                           event_datetime, event_location, state,
+                                                                           namedentity_location_str,
+                                                                           namedentity_organization_str,
+                                                                           namedentity_person_str, "", event_id)
+                        rdms_service.insert_sentattribute_rel(short_sentence, attribute_id, sentence_id)
+                        # 若字符属性匹配失败，则进行NN网络属性匹配（NN网络属性匹配为空实现）
+                        check_event_attribute = __check_event_attribute_by_nn(event_location, event_datetime,
+                                                                              namedentity_organization,
+                                                                              namedentity_person)
+                        # 若NN属性匹配成功，则记录到事件属性校验表（目前无实现）
+                        if check_event_attribute:
+                            pass
+                        else:
+                            pass
+            else:
+                # 字符事件匹配失败，则记录事件信息表、事件属性表、事件句子属性表、图数据库
+                event_id, event = __storage_new_event(subject, verb, object, short_sentence, cameo,
+                                                      triggerloc_index,
+                                                      sentiment_analysis, event_datetime, negative_word, state,
+                                                      event_location,
+                                                      namedentity_location_str, namedentity_organization_str,
+                                                      namedentity_person_str, graph_db, sentence_id, event_tag)
+                event_list.append(event)
+                event_id_list.append(event_id)
+                # 字符事件匹配失败，则进行NN事件匹配
+                check_event_info, event_infos = __check_event_info_by_nn(short_sentence, cameo)
+                # 若NN事件匹配成功，记录到事件信息镜像校验表
+                if check_event_info:
+                    copy_event_id = event_id
+                    for event_info in event_infos:
+                        event_id = event_info["event_id"]
+                        rdms_service.insert_event_copy(copy_event_id, event_id)
+                else:
+                    # 若NN事件匹配失败，则保存神经网络向量
+                    data = {"short_sentence": short_sentence, "cameo": cameo, "event_id": event_id}
+                    res = http_post(data, config.event_vector_uri)
+                    response = json.loads(res)
+                    if response["status"] != 'success':
+                        logging.warning("调用事件向量存储接口失败：" + response["message"])
+    # 上面代码中出错后不需要回滚
+    # rdms_db.commit()
 
     return event_id_list, event_list
 

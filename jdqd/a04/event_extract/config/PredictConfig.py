@@ -28,9 +28,13 @@ bert_config_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, bert_config_path)
 dict_path = "chinese_roberta_wwm_ext_L-12_H-768_A-12/vocab.txt"
 dict_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, dict_path)
 # 小牛翻译的key
-user_key = "dfc242105d925bf99d82bc16c2171a00"
+user_key = "b3d33c84a6291b89524e1a759064032a"
 # 小牛翻译的网址
-translate_url = "http://api.niutrans.vip/NiuTransServer/translation?"
+translate_url = "http://free.niutrans.com/NiuTransServer/translation"
+# 小牛翻译的key
+charge_user_key = "7bbd0ffbf54212e89b03d0aa120f9224"
+# 小牛翻译的网址
+charge_translate_url = "http://api.niutrans.com/NiuTransServer/translation"
 # 事件类型字典文件
 id2cameo_path = "event_extract/id2label.json"
 id2cameo_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, id2cameo_path)

@@ -5,7 +5,6 @@
 """
 事件抽取模块的接口，提供事件抽取接口和指代消解接口
 """
-import re
 import copy
 import traceback
 import threading
@@ -118,8 +117,13 @@ def extract_work():
     事件抽取主模块，对传入的中文字符串进行事件抽取，将抽取的结果使用子队列传递出去
     :return: None
     """
-    from jdqd.a04.event_extract.algor.predict.load_all_model import get_state_model, get_extract_model, get_ners, \
-        extract_items, get_cameo_model, get_event_cameo
+    try:
+        from jdqd.a04.event_extract.algor.predict.load_all_model import get_state_model, get_extract_model, get_ners_lac, \
+            extract_items, get_cameo_model, get_event_cameo
+    except:
+        trac = traceback.format_exc()
+        logger.error(trac)
+        raise trac
 
     logger.info("开始加载事件抽取模型。。。")
     state_model = get_state_model()
@@ -150,7 +154,7 @@ def extract_work():
             else:
                 results.append(event)
         # 对得到的事件列表进行实体信息补充
-        results = get_ners(results)
+        results = get_ners_lac(results)
 
         return results
 
@@ -219,7 +223,7 @@ def coref_work():
     指代消解主模块，将指代结果通过子队列传送出去
     :return: None
     """
-    from jdqd.a04.event_extract.algor.predict.xiaoniu_translate import transform_any_2_zh
+    from jdqd.a04.event_extract.algor.predict.xiaoniu_translate import free_transform_any_2_zh, transform_any_2_zh
     from jdqd.a04.event_extract.algor.predict import coref_spacy
 
     # 加载指代消解模型对象
@@ -237,12 +241,6 @@ def coref_work():
             logger.error("待消解的内容格式错误，应该是字符串格式，且不能为空！")
             raise TypeError
 
-        # sentences = ["{}。".format(a) for a in re.split("[。？！?!.]", query) if a]
-        # # 2en
-        # sentences = [transform_any_2_en(i) for i in sentences]
-        # # 连接成字符串
-        # sentences = " ".join(sentences)
-
         # 消除朝鲜和韩国的指代消歧问题，对两个国家进行指代符替换
         # 防止指代消解因朝鲜韩国出现问题，提前将二者替换为NK SK,如果二者同时存在则只替换一个
         if "North Korea" in query:
@@ -253,11 +251,34 @@ def coref_work():
         # 指代消解
         spacy_data = coref_spacy.coref_data(nlp, query)
 
-        # 对句子进行翻译并拼接成字符串
-        try:
-            spacy_data = "".join([transform_any_2_zh(str(once)) for once in nlp(spacy_data).sents if once])
-        except:
-            spacy_data = "".join([f"{transform_any_2_zh(str(once))}。" for once in re.split("[.?!]", spacy_data) if once])
+        # 限制字符翻译
+        temp = ''
+        data = []
+        for once in nlp(spacy_data).sents:
+            if len(temp) + len(str(once)) <= 2000:
+                temp = f"{temp} {str(once)}"
+            else:
+                # 使用免费接口进行翻译，报错则使用收费接口
+                trans = free_transform_any_2_zh(temp)
+                if type(trans) != str:
+                    trans = transform_any_2_zh(temp)
+                data.append(trans)
+                temp = str(once)
+
+        # 使用免费接口进行翻译，报错则使用收费接口
+        trans = free_transform_any_2_zh(temp)
+        if type(trans) == str:
+            trans = transform_any_2_zh(temp)
+        data.append(trans)
+
+        # 将翻译内容拼接为字符串
+        spacy_data = "".join(data)
+
+        # # 对句子进行翻译并拼接成字符串
+        # try:
+        #     spacy_data = "".join([free_transform_any_2_zh(str(once)) for once in nlp(spacy_data).sents if once])
+        # except:
+        #     spacy_data = "".join([f"{free_transform_any_2_zh(str(once))}。" for once in re.split("[.?!]", spacy_data) if once])
 
         # 将指代符替换成相应的国家
         if "SK" in spacy_data:

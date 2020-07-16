@@ -2,11 +2,11 @@
     
     - 端口：38082    
     
-    - 本机调试：事件抽取 127.0.0.1:38082/event_extract?sentence=李小龙创立了截拳道。
+    - 本机调试：事件抽取 127.0.0.1:38082/event_extract
     
-               指代消解 127.0.0.1:38082/coref_with_content?content=李小龙创立了截拳道。
+               指代消解 127.0.0.1:38082/coref_with_content
                
-               模型训练 127.0.0.1:38082/event_train?train_type=extract
+               模型训练 127.0.0.1:38082/event_train
                
     - 事件抽取：抽取中文文本中的事件；
     
