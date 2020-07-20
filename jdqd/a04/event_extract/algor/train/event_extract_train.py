@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 # @Author: Mr Fan
-# @Time: 2020年06月09
+# @Time: 2020年07月17
+# ! -*- coding:utf-8 -*-
 """
  事件抽取模型训练
  使用条件批归一化进行向量融合
@@ -13,23 +14,27 @@ from keras.layers import Input, Lambda, Dense, Average
 from keras.models import Model
 from keras.callbacks import Callback
 from bert4keras.models import build_transformer_model
-from bert4keras.backend import K
+from bert4keras.backend import K, set_gelu
 from bert4keras.optimizers import Adam
 from bert4keras.layers import LayerNormalization
-from jdqd.common.event_emm.model_utils import seq_gather, generate_trained_model_path, TOKENIZER
+from jdqd.common.event_emm.model_utils import seq_gather, generate_trained_model_path, TOKENIZER, adversarial_training
 from jdqd.a04.event_extract.algor.train.utils.event_extract_data_util import DataGenerator, get_data
 from feedwork.utils import logger
 import jdqd.a04.event_extract.config.ExtractTrainConfig as extract_train_config
 import jdqd.common.event_emm.BertConfig as bert_config
 
+
+# 设置激活函数
+set_gelu('tanh')
 # 构建默认图和会话
 GRAPH = tf.Graph()
 SESS = tf.Session(graph=GRAPH)
-
 # 训练后模型保存路径
-TRAINED_MODEL_PATH = generate_trained_model_path(extract_train_config.trained_model_dir, extract_train_config.trained_model_name)
+TRAINED_MODEL_PATH = generate_trained_model_path(extract_train_config.trained_model_dir,
+                                                 extract_train_config.trained_model_name)
 # 获取训练集、验证集
-TRAIN_DATA, DEV_DATA = get_data(extract_train_config.train_data_path, extract_train_config.dev_data_path, extract_train_config.supplement_data_dir)
+TRAIN_DATA, DEV_DATA = get_data(extract_train_config.train_data_path, extract_train_config.dev_data_path,
+                                extract_train_config.supplement_data_dir)
 
 
 def build_model():
@@ -222,11 +227,10 @@ def build_model():
     return trigger_model, subject_model, object_model, time_model, loc_model, negative_model, train_model
 
 
-# 构建模型
-TRIGGER_MODEL, SUBJECT_MODEL, OBJECT_MODEL, TIME_MODEL, LOC_MODEL, NEGATIVE_MODEL, TRAIN_MODEL = build_model()
+# 搭建模型
+TRIGGER_MODEL, OBJECT_MODEL, SUBJECT_MODEL, LOC_MODEL, TIME_MODEL, NEGATIVE_MODEL, TRAIN_MODEL = build_model()
 
 
-# 调用模型对传入的数据进行抽取
 def extract_items(text_in: str):
     """
     传入待预测的文本字符串，调用各个模型，句子中的事件论元进行抽取，先抽取动词，然后使用动词下标和句子张量预测其它论元。
@@ -245,19 +249,16 @@ def extract_items(text_in: str):
         logger.error("Type of text_in must be str!")
         raise TypeError
 
-    # 防止句子过长，使用最大长度切分，然后使用bert分字进行分字并编码。
+    # 对输入的句子进行分词
     _tokens = TOKENIZER.tokenize(text_in[:extract_train_config.maxlen])
+    # 对输入的句子进行ids化
     _text_token_ids, _text_segment_ids = TOKENIZER.encode(first_text=text_in[:extract_train_config.maxlen])
-    # 转化为数组格式，模型预测需要数组格式，外层[]表示批次
     _text_token_ids, _text_segment_ids = np.array([_text_token_ids]), np.array([_text_segment_ids])
-    # 抽取事件触发词
     _trigger_start_pre, _trigger_end_pre = TRIGGER_MODEL.predict([_text_token_ids, _text_segment_ids])
-    # 动词下标
-    _trigger_start_index = np.where(_trigger_start_pre[0] > 0.5)[0]
-    _trigger_end_index = np.where(_trigger_end_pre[0] > 0.4)[0]
+    _trigger_start_pre, _trigger_end_pre = np.where(_trigger_start_pre[0] > 0.5)[0], np.where(_trigger_end_pre[0] > 0.4)[0]
     _triggers = []
-    for i in _trigger_start_index:
-        j = _trigger_end_index[_trigger_end_index >= i]
+    for i in _trigger_start_pre:
+        j = _trigger_end_pre[_trigger_end_pre >= i]
         if len(j) > 0:
             j = j[0]
             _trigger = text_in[i - 1: j]
@@ -269,81 +270,65 @@ def extract_items(text_in: str):
         _text_segment_ids = np.repeat(_text_segment_ids, len(_triggers), 0)
         # 动词下标
         _trigger_start_index, _trigger_end_index = np.array([_s[1:] for _s in _triggers]).T.reshape((2, -1, 1))
-        # 宾语预测值
-        _object_start_pre, _object_end_pre = OBJECT_MODEL.predict(
-            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])  # 宾语
-        # 主语预测值
-        _subject_start_pre, _subject_end_pre = SUBJECT_MODEL.predict(
-            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])  # 主语
-        # 地点预测值
-        _loc_start_pre, _loc_end_pre = LOC_MODEL.predict(
-            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])  # 地点
-        # 事件预测值
-        _time_start_pre, _time_end_pre = TIME_MODEL.predict(
-            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])  # 时间
-        # 否定词预测值
-        _negative_start_pre, _negative_end_pre = NEGATIVE_MODEL.predict(
-            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])  # 否定词
+        # 宾语
+        _object_start_pre, _object_end_pre = OBJECT_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        # 主语
+        _subject_start_pre, _subject_end_pre = SUBJECT_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        # 地点
+        _loc_start_pre, _loc_end_pre = LOC_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        # 时间
+        _time_start_pre, _time_end_pre = TIME_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        # 否定词
+        _negative_start_pre, _negative_end_pre = NEGATIVE_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
 
-        for k, _trigger in enumerate(_triggers):
+        for i, _trigger in enumerate(_triggers):
             objects = []
             subjects = []
             locs = []
             times = []
             privatives = []
             # 宾语下标
-            _object_start_index = np.where(_object_start_pre[k] > 0.5)[0]
-            _object_end_index = np.where(_object_end_pre[k] > 0.4)[0]
+            _object_start_index, _object_end_index = np.where(_object_start_pre[i] > 0.5)[0], np.where(_object_end_pre[i] > 0.4)[0]
             # 主语下标
-            _subject_start_index = np.where(_subject_start_pre[k] > 0.5)[0]
-            _subject_end_index = np.where(_subject_end_pre[k] > 0.4)[0]
+            _subject_start_index, _subject_end_index = np.where(_subject_start_pre[i] > 0.5)[0], np.where(_subject_end_pre[i] > 0.4)[0]
             # 地点下标
-            _loc_start_index = np.where(_loc_start_pre[k] > 0.5)[0]
-            _loc_end_index = np.where(_loc_end_pre[k] > 0.4)[0]
-
+            _loc_start_index, _loc_end_index = np.where(_loc_start_pre[i] > 0.5)[0], np.where(_loc_end_pre[i] > 0.4)[0]
             # 时间下标
-            _time_start_index = np.where(_time_start_pre[k] > 0.5)[0]
-            _time_end_index = np.where(_time_end_pre[k] > 0.4)[0]
-
+            _time_start_index, _time_end_index = np.where(_time_start_pre[i] > 0.5)[0], np.where(_time_end_pre[i] > 0.4)[0]
             # 否定词下标
-            _negative_start_index = np.where(_negative_start_pre[k] > 0.5)[0]
-            _negative_end_index = np.where(_negative_end_pre[k] > 0.4)[0]
+            _negative_start_index, _negative_end_index = np.where(_negative_start_pre[i] > 0.5)[0], np.where(_negative_end_pre[i] > 0.4)[0]
 
-            # 获取宾语
-            for o_index in _object_start_index:
-                j = _object_end_index[_object_end_index >= o_index]
+            #开始抽取各个论元部分
+            for i in _object_start_index:
+                j = _object_end_index[_object_end_index >= i]
                 if len(j) > 0:
                     j = j[0]
-                    _object = text_in[o_index - 1: j]
-                    objects.append([_object, [str(o_index - 1), str(j)]])
-            # 获取主语
-            for s_index in _subject_start_index:
-                j = _subject_end_index[_subject_end_index >= s_index]
+                    _object = text_in[i - 1: j]
+                    objects.append([_object, [str(i - 1), str(j)]])
+            for i in _subject_start_index:
+                j = _subject_end_index[_subject_end_index >= i]
                 if len(j) > 0:
                     j = j[0]
-                    _subject = text_in[s_index - 1: j]
-                    subjects.append([_subject, [str(s_index - 1), str(j)]])
-            # 获取地点
-            for l_index in _loc_start_index:
-                j = _loc_end_index[_loc_end_index >= l_index]
+                    _subject = text_in[i - 1: j]
+                    subjects.append([_subject, [str(i - 1), str(j)]])
+            for i in _loc_start_index:
+                j = _loc_end_index[_loc_end_index >= i]
                 if len(j) > 0:
                     j = j[0]
-                    _loc = text_in[l_index - 1: l_index]
-                    locs.append([_loc, [str(l_index - 1), str(j)]])
-            # 获取时间
-            for t_index in _time_start_index:
-                j = _time_end_index[_time_end_index >= t_index]
+                    _loc = text_in[i - 1: j]
+                    locs.append([_loc, [str(i - 1), str(j)]])
+            for i in _time_start_index:
+                j = _time_end_index[_time_end_index >= i]
                 if len(j) > 0:
                     j = j[0]
-                    _time = text_in[t_index - 1: j]
-                    times.append([_time, [str(t_index - 1), str(j)]])
-            # 获取否定词
-            for n_index in _negative_start_index:
-                j = _negative_end_index[_negative_end_index >= n_index]
+                    _time = text_in[i - 1: j]
+                    times.append([_time, [str(i - 1), str(j)]])
+            for i in _negative_start_index:
+                j = _negative_end_index[_negative_end_index >= i]
                 if len(j) > 0:
                     j = j[0]
-                    _privative = text_in[n_index - 1: j]
-                    privatives.append([_privative, [str(n_index - 1), str(j)]])
+                    _privative = text_in[i - 1: j]
+                    privatives.append([_privative, [str(i - 1), str(j)]])
 
             events.append({
                 "time": times,
@@ -357,6 +342,35 @@ def extract_items(text_in: str):
         return events
     else:
         return []
+
+
+# def model_test(test_data):
+#     """
+#     传入测试数据，将测试结果保存到文件中
+#     :param test_data: (list)测试数据
+#     :return: None
+#     :raise: TypeError
+#     """
+#     if not isinstance(test_data, list):
+#         LOG.error("The type of test_data is wrong!")
+#         raise TypeError
+#
+#     f = open(CONFIG.pred_path, 'w', encoding='utf-8')
+#     f.write('[\n')
+#     first = True
+#     for d in iter(test_data):
+#         if not first:
+#             f.write(',\n')
+#         else:
+#             first = False
+#         events = extract_items(d['sentence'])
+#         s = json.dumps({
+#             'sentence': d['sentence'],
+#             'events': events
+#         }, ensure_ascii=False)
+#         f.write(s)
+#     f.write(']\n')
+#     f.close()
 
 
 class Evaluate(Callback):
@@ -468,35 +482,6 @@ class Evaluate(Callback):
         return f1, precision, recall
 
 
-# def model_test(test_data):
-#     """
-#     传入测试数据，将测试结果保存到文件中
-#     :param test_data: (list)测试数据
-#     :return: None
-#     :raise: TypeError
-#     """
-#     if not isinstance(test_data, list):
-#         LOG.error("The type of test_data is wrong!")
-#         raise TypeError
-#
-#     f = open(CONFIG.pred_path, 'w', encoding='utf-8')
-#     f.write('[\n')
-#     first = True
-#     for d in iter(test_data):
-#         if not first:
-#             f.write(',\n')
-#         else:
-#             first = False
-#         events = extract_items(d['sentence'])
-#         s = json.dumps({
-#             'sentence': d['sentence'],
-#             'events': events
-#         }, ensure_ascii=False)
-#         f.write(s)
-#     f.write(']\n')
-#     f.close()
-
-
 def model_train():
     """
     进行模型训练
@@ -515,6 +500,9 @@ def model_train():
             else:
                 all_steps = train_d.__len__()
 
+            # 构造对抗攻击训练
+            adversarial_training(TRAIN_MODEL, 'Embedding-Token', 0.1)
+
             # 模型训练
             TRAIN_MODEL.fit_generator(train_d.__iter__(), steps_per_epoch=all_steps, epochs=extract_train_config.epoch,
                                       callbacks=[evaluator])
@@ -526,4 +514,12 @@ def model_train():
 
 
 if __name__ == '__main__':
+    # # 预测
+    # with SESS.as_default():
+    #     with SESS.graph.as_default():
+    #         evaluator = Evaluate()
+    #         TRAIN_MODEL.load_weights(TRAINED_MODEL_PATH)
+    #         f1, precision, recall = evaluator.evaluate()
+    #         logger.info(f"f1:{f1}, precision:{precision}, recall:{recall}")
+
     model_train()

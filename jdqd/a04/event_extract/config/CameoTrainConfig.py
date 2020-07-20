@@ -38,3 +38,5 @@ learning_rate = 5e-5
 min_learning_rate = 1e-5
 # 字符串最大长度
 maxlen = 160
+# pretrain_model
+pretrain_model = "roberta"

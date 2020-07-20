@@ -30,25 +30,64 @@ def event_extract_train():
     """
     if request.method == "POST":
         query = request.form.get("train_type", type=str, default="extract")
+        pretrain_model = request.form.get("pretrain_model", type=str, default="roberta")
+        max_learning_rate = request.form.get("max_learning_rate", type=float, default=5e-5)
+        min_learning_rate = request.form.get("min_learning_rate", type=float, default=1e-5)
+        batch_size = request.form.get("batch_size", type=int, default=8)
+        seq_max_len = request.form.get("seq_max_len", type=int, default=160)
+        epoch = request.form.get("epoch", type=int, default=100)
     else:
         query = request.args.get("train_type", type=str, default="extract")
+        pretrain_model = request.args.get("pretrain_model", type=str, default="roberta")
+        max_learning_rate = request.args.get("max_learning_rate", type=float, default=5e-5)
+        min_learning_rate = request.args.get("min_learning_rate", type=float, default=1e-5)
+        batch_size = request.args.get("batch_size", type=int, default=8)
+        seq_max_len = request.args.get("seq_max_len", type=int, default=160)
+        epoch = request.args.get("epoch", type=int, default=100)
 
     try:
         if query == "cameo":
             logger.info("开始训练事件cameo模型。。。")
             from jdqd.a04.event_extract.algor.train import event_cameo_train
+            from jdqd.a04.event_extract.config import CameoTrainConfig
+            # 对模型超参赋值
+            CameoTrainConfig.maxlen = seq_max_len
+            CameoTrainConfig.batch_size = batch_size
+            CameoTrainConfig.learning_rate = max_learning_rate
+            CameoTrainConfig.min_learning_rate = min_learning_rate
+            CameoTrainConfig.epoch = epoch
+            CameoTrainConfig.pretrain_model = pretrain_model
+            # 开始训练
             event_cameo_train.model_train()
             trace = "success"
 
         elif query == "state":
             logger.info("开始训练事件状态模型。。。")
             from jdqd.a04.event_extract.algor.train import event_state_train
+            from jdqd.a04.event_extract.config import StateTrainConfig
+            # 模型超参赋值
+            StateTrainConfig.maxlen = seq_max_len
+            StateTrainConfig.batch_size = batch_size
+            StateTrainConfig.learning_rate = max_learning_rate
+            StateTrainConfig.min_learning_rate = min_learning_rate
+            StateTrainConfig.epoch = epoch
+            StateTrainConfig.pretrain_model = pretrain_model
+            # 开始训练
             event_state_train.model_train()
             trace = "success"
 
         elif query == "extract":
             logger.info("开始训练事件抽取模型。。。")
             from jdqd.a04.event_extract.algor.train import event_extract_train
+            from jdqd.a04.event_extract.config import ExtractTrainConfig
+            # 模型超参赋值
+            ExtractTrainConfig.maxlen = seq_max_len
+            ExtractTrainConfig.batch_size = batch_size
+            ExtractTrainConfig.learning_rate = max_learning_rate
+            ExtractTrainConfig.min_learning_rate = min_learning_rate
+            ExtractTrainConfig.epoch = epoch
+            ExtractTrainConfig.pretrain_model = pretrain_model
+            # 开始训练
             event_extract_train.model_train()
             trace = "success"
 
