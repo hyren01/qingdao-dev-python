@@ -5,6 +5,7 @@
 """
 事件抽取模块的接口，提供事件抽取接口和指代消解接口
 """
+import os
 import copy
 import traceback
 import threading
@@ -12,7 +13,16 @@ from queue import Queue
 from flask_cors import CORS
 from flask import Flask, request, jsonify
 from feedwork.utils import logger
-from jdqd.common.event_emm.data_utils import data_process, get_sentences
+from feedwork.utils.FileHelper import cat_path # 模型重载使用
+# from jdqd.common.event_emm.data_utils import data_process, get_sentences  # 数据清洗和分句，后期调试可能会用到
+from jdqd.a04.event_extract.config import PredictConfig  # 模型重载使用
+from jdqd.a04.event_extract.algor.predict.load_all_model import get_state_model, get_extract_model, get_ners_lac, \
+    extract_items, get_cameo_model, get_event_cameo
+
+# 加载模型参数
+state_model = get_state_model()
+trigger_model, object_model, subject_model, loc_model, time_model, negative_model = get_extract_model()
+cameo_model = get_cameo_model()
 
 app = Flask(__name__)
 CORS(app)
@@ -22,86 +32,48 @@ EXTRACT_QUEUE = Queue(maxsize=5)
 COREF_QUEUE = Queue(maxsize=5)
 
 
-@app.route('/event_train', methods=['GET', 'POST'])
-def event_extract_train():
+@app.route('/reload_model', methods=['GET', 'POST'])
+def reload_model():
     """
-    从前端接受指令，判断需要训练哪个模型
-    :return: 训练信息
+    从前端接收模型路径，重新加载模型
+    :return: status 加载状态
     """
+    # 模型路径字典
+    model_path = {"extract": "", "cameo": "", "state": ""}
+
     if request.method == "POST":
-        query = request.form.get("train_type", type=str, default="extract")
-        pretrain_model = request.form.get("pretrain_model", type=str, default="roberta")
-        max_learning_rate = request.form.get("max_learning_rate", type=float, default=5e-5)
-        min_learning_rate = request.form.get("min_learning_rate", type=float, default=1e-5)
-        batch_size = request.form.get("batch_size", type=int, default=8)
-        seq_max_len = request.form.get("seq_max_len", type=int, default=160)
-        epoch = request.form.get("epoch", type=int, default=100)
+        model_path["extract"] = request.form.get("extract", type=str, default=None)
+        model_path["cameo"] = request.form.get("cameo", type=str, default=None)
+        model_path["state"] = request.form.get("state", type=str, default=None)
+        model_version = request.form.get("version", type=str, default=None)
+        model_id = request.form.get("model_id", type=str, default=None)
     else:
-        query = request.args.get("train_type", type=str, default="extract")
-        pretrain_model = request.args.get("pretrain_model", type=str, default="roberta")
-        max_learning_rate = request.args.get("max_learning_rate", type=float, default=5e-5)
-        min_learning_rate = request.args.get("min_learning_rate", type=float, default=1e-5)
-        batch_size = request.args.get("batch_size", type=int, default=8)
-        seq_max_len = request.args.get("seq_max_len", type=int, default=160)
-        epoch = request.args.get("epoch", type=int, default=100)
+        model_path["extract"] = request.args.get("extract", type=str, default=None)
+        model_path["cameo"] = request.args.get("cameo", type=str, default=None)
+        model_path["state"] = request.args.get("state", type=str, default=None)
+        model_version = request.args.get("version", type=str, default=None)
+        model_id = request.args.get("model_id", type=str, default=None)
 
     try:
-        if query == "cameo":
-            logger.info("开始训练事件cameo模型。。。")
-            from jdqd.a04.event_extract.algor.train import event_cameo_train
-            from jdqd.a04.event_extract.config import CameoTrainConfig
-            # 对模型超参赋值
-            CameoTrainConfig.maxlen = seq_max_len
-            CameoTrainConfig.batch_size = batch_size
-            CameoTrainConfig.learning_rate = max_learning_rate
-            CameoTrainConfig.min_learning_rate = min_learning_rate
-            CameoTrainConfig.epoch = epoch
-            CameoTrainConfig.pretrain_model = pretrain_model
-            # 开始训练
-            event_cameo_train.model_train()
-            trace = "success"
+        logger.info("开始重载模型参数。。。")
+        for model_type in model_path:
+            if model_path[model_type] != None and not model_path[model_type]:
+                if os.path.exists(model_path[model_type]):
+                    exec(
+                        f"model_path[{model_type}] = cat_path(model_path[{model_type}], {model_type}_model_{model_version}_{model_id}.h5)")
+                    exec(f"PredictConfig.event_{model_type}_model_path = model_path[{model_type}]")
+                    exec(f"get_{model_type}_model()")
+                else:
+                    logger.error(f"{model_type}模型路径：{model_path[model_type]}错误，请重新传入！")
+                    raise ValueError
+        logger.info("模型参数重载完成！")
+        return jsonify(status="success")
 
-        elif query == "state":
-            logger.info("开始训练事件状态模型。。。")
-            from jdqd.a04.event_extract.algor.train import event_state_train
-            from jdqd.a04.event_extract.config import StateTrainConfig
-            # 模型超参赋值
-            StateTrainConfig.maxlen = seq_max_len
-            StateTrainConfig.batch_size = batch_size
-            StateTrainConfig.learning_rate = max_learning_rate
-            StateTrainConfig.min_learning_rate = min_learning_rate
-            StateTrainConfig.epoch = epoch
-            StateTrainConfig.pretrain_model = pretrain_model
-            # 开始训练
-            event_state_train.model_train()
-            trace = "success"
-
-        elif query == "extract":
-            logger.info("开始训练事件抽取模型。。。")
-            from jdqd.a04.event_extract.algor.train import event_extract_train
-            from jdqd.a04.event_extract.config import ExtractTrainConfig
-            # 模型超参赋值
-            ExtractTrainConfig.maxlen = seq_max_len
-            ExtractTrainConfig.batch_size = batch_size
-            ExtractTrainConfig.learning_rate = max_learning_rate
-            ExtractTrainConfig.min_learning_rate = min_learning_rate
-            ExtractTrainConfig.epoch = epoch
-            ExtractTrainConfig.pretrain_model = pretrain_model
-            # 开始训练
-            event_extract_train.model_train()
-            trace = "success"
-
-        else:
-            logger.error("输入字段有问题!cameo、state、extract?")
-            raise ValueError
     except:
         trace = traceback.format_exc()
         logger.error(trace)
 
-    if trace == "success":
-        return jsonify(status="success")
-    else:
-        return jsonify(status=trace)
+        return jsonify(status="error", message=trace)
 
 
 @app.route('/event_extract', methods=['GET', 'POST'])
@@ -110,6 +82,7 @@ def extract_infer():
     从前端获取待抽取事件的中文字符串--str
     :return: 返回事件抽取的结果
     """
+    # 模型路径字典
     if request.method == "POST":
         query = request.form.get("sentence", type=str, default=None)
     else:
@@ -156,19 +129,6 @@ def extract_work():
     事件抽取主模块，对传入的中文字符串进行事件抽取，将抽取的结果使用子队列传递出去
     :return: None
     """
-    try:
-        from jdqd.a04.event_extract.algor.predict.load_all_model import get_state_model, get_extract_model, get_ners_lac, \
-            extract_items, get_cameo_model, get_event_cameo
-    except:
-        trac = traceback.format_exc()
-        logger.error(trac)
-        raise trac
-
-    logger.info("开始加载事件抽取模型。。。")
-    state_model = get_state_model()
-    trigger_model, object_model, subject_model, loc_model, time_model, negative_model = get_extract_model()
-    cameo_model = get_cameo_model()
-    logger.info("事件抽取模型加载完成！")
 
     def evaluate(sentence):
         """
@@ -202,10 +162,11 @@ def extract_work():
         # 获取数据和子队列
         query, extract_sub_queue = EXTRACT_QUEUE.get()
         try:
-            # 处理文本，抽取事件
-            content = data_process(query)
-            sentences = get_sentences(content)
-
+            # # 处理文本，抽取事件
+            # content = data_process(query)
+            content = query
+            # sentences = get_sentences(content)
+            sentences = [query]
             # 最终的事件结果
             final_result = []
             # 事件id，唯一标识
@@ -294,7 +255,7 @@ def coref_work():
         temp = ''
         data = []
         for once in nlp(spacy_data).sents:
-            if len(temp) + len(str(once)) <= 2000:
+            if len(temp) + len(str(once)) < 2000:
                 temp = f"{temp} {str(once)}"
             else:
                 # 使用免费接口进行翻译，报错则使用收费接口
@@ -306,20 +267,13 @@ def coref_work():
 
         # 使用免费接口进行翻译，报错则使用收费接口
         trans = free_transform_any_2_zh(temp)
-        if type(trans) == str:
+        if type(trans) != str:
             trans = transform_any_2_zh(temp)
         data.append(trans)
 
         # 将翻译内容拼接为字符串
         spacy_data = "".join(data)
 
-        # # 对句子进行翻译并拼接成字符串
-        # try:
-        #     spacy_data = "".join([free_transform_any_2_zh(str(once)) for once in nlp(spacy_data).sents if once])
-        # except:
-        #     spacy_data = "".join([f"{free_transform_any_2_zh(str(once))}。" for once in re.split("[.?!]", spacy_data) if once])
-
-        # 将指代符替换成相应的国家
         if "SK" in spacy_data:
             spacy_data = spacy_data.replace("SKn", "韩国").replace("SK", "韩国")
         elif "NK" in spacy_data:

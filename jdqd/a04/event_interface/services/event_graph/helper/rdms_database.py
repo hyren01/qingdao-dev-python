@@ -366,18 +366,22 @@ def get_article_list(event_id):
             article_id_arr = []
             for ids in article_ids.article_id:
                 article_id_arr.append(ids)
-            # 查询文章信息
-            article = db.query(
-                "select article_id,title as translated_title,title from t_article_msg_zh where article_id in (%s)" % ','.join(
-                    ['%s'] * len(article_id_arr)), article_id_arr, QueryResultType.JSON)
-            # 查询文章关联的事件，用于前端连线
-            for a in article:
-                article_event = db.query(f"select distinct(a.event_id) from ebm_event_info a "
-                                         f"join ebm_eventsent_rel b on a.event_id=b.event_id "
-                                         f"join ebm_sentattribute_rel c on b.relation_id=c.relation_id "
-                                         f"join ebm_event_sentence d on c.sentence_id=d.sentence_id "
-                                         f"where d.article_id='{a['article_id']}'", (), QueryResultType.JSON)
-                a.update({"event_ids": article_event})
+            if article_id_arr:
+                # 查询文章信息
+                article = db.query(
+                    "select a.article_id,b.title as translated_title,b.content_summary,a.spider_time,a.source "
+                    "from t_article_msg a "
+                    "left join t_article_msg_zh b on a.article_id=b.article_id "
+                    "where a.article_id in (%s) limit 10" % ','.join(
+                        ['%s'] * len(article_id_arr)), article_id_arr, QueryResultType.JSON)
+                # 查询文章关联的事件，用于前端连线
+                for a in article:
+                    article_event = db.query(f"select distinct(a.event_id) from ebm_event_info a "
+                                             f"join ebm_eventsent_rel b on a.event_id=b.event_id "
+                                             f"join ebm_sentattribute_rel c on b.relation_id=c.relation_id "
+                                             f"join ebm_event_sentence d on c.sentence_id=d.sentence_id "
+                                             f"where d.article_id='{a['article_id']}'", (), QueryResultType.JSON)
+                    a.update({"event_ids": article_event})
 
     except Exception as e:
         raise RuntimeError(e)

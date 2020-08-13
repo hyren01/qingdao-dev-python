@@ -109,6 +109,8 @@
         - event_extract_train.py 事件抽取模型训练代码
         
         - event_state_train.py 事件状态训练代码
+        
+        - extract_data_analysis.py
     
 ## config
 

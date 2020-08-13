@@ -8,6 +8,9 @@
 import feedwork.AppinfoConf as appconf
 from feedwork.utils.FileHelper import cat_path
 
+
+# 夹角余弦值的阈值
+cos_thread = 0.8
 # bert所能编码的最大长度
 maxlen = 512
 # 匹配模型路径

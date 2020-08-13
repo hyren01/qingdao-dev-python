@@ -9,13 +9,13 @@ class Config(object):
         self.db_user = "jdqd"
         self.db_passwd = "jdqd"
 
-        self.neo4j_uri = "bolt://172.168.0.115:7687"
+        self.neo4j_uri = "bolt://172.168.0.10:7687"
         self.neo4j_username = "neo4j"
-        self.neo4j_password = "q1w2e3"
+        self.neo4j_password = "hrs@q1w2"
 
         # 事件抽取
         # url_event_extract = "http://172.168.0.115:38082/event_extract"
-        self.url_event_extract = "http://127.0.0.1:8083/event_parsed_extract"
+        self.url_event_extract = "http://172.168.0.10:8083/event_parsed_extract"
         # 提取关键词
         # self.url_relation_keywords = "http://172.168.0.115:12319/relation_keywords"
         # 拆分子句

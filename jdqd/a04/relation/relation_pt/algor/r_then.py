@@ -46,3 +46,4 @@ def rule302(sentence, keyword):
 rules = [rule101, rule102, rule103, rule104, rule105, rule301, rule302]
 
 keyword_rules = {k.__name__: keywords for k in rules}
+rw_type = 'then'

@@ -4,44 +4,117 @@ Created on Tue Jun  9 15:14:40 2020
 
 @author: 12894
 """
-
+import os
+import json
 import numpy as np
 import pandas as pd
 import random
 from keras.utils import to_categorical
 from jdqd.common.relation_com.model_utils import seq_padding
 
-def get_data(total_data_path, relation):
+def sens_tagging1(sentence, index_first, index_second):
+    '''
+    关系事件对谓语正向标注
+    :param sentence: 字符串句子
+    :param index_first: 正向关系第一个谓语下标(list)
+    :param index_second: 正向关系第二个谓语下标(list)
+    return 标注后的句子
+    '''
+    if index_first[1] <= index_second[0]:
+        sentence = sentence[:index_first[0]] + '$' + sentence[index_first[0]:index_first[1]] + '$' + \
+            sentence[index_first[1]:index_second[0]] + '#' + sentence[index_second[0]:index_second[1]] + '#' + \
+            sentence[index_second[1]:]
+    else:
+        sentence = sentence[:index_second[0]] + '#' + sentence[index_second[0]:index_second[1]] + '#' +\
+        sentence[index_second[1]:index_first[0]] + '$' + sentence[index_first[0]:index_first[1]] + '$' + \
+        sentence[index_first[1]:]
+    return  sentence
+
+def sens_tagging2(sentence, index_first, index_second):
+        '''
+    关系事件对谓语正向标注
+    :param sentence: 字符串句子
+    :param index_first: 正向关系第一个谓语下标(list)
+    :param index_second: 正向关系第二个谓语下标(list)
+    return 标注后的句子
+    '''
+    if index_first[1] <= index_second[0]:
+        sentence = sentence[:index_first[0]] + '#' + sentence[index_first[0]:index_first[1]] + '#' + \
+            sentence[index_first[1]:index_second[0]] + '$' + sentence[index_second[0]:index_second[1]] + '$' + \
+            sentence[index_second[1]:]
+    else:
+        sentence = sentence[:index_second[0]] + '$' + sentence[index_second[0]:index_second[1]] + '$' +\
+        sentence[index_second[1]:index_first[0]] + '#' + sentence[index_first[0]:index_first[1]] + '#' + \
+        sentence[index_first[1]:]
+    return  sentence
+
+def get_data_x(total_data_path, is_bi_directional = True):
     '''
     传入数据路径，输出符合模型输入格式的训练集与测试集数据
     :param total_data_path: 全部数据路径
+    :is_bi_directional： 是否双向关系
     return train_line(list), test_line(list)
     '''
-    causality = []
-    with open(total_data_path + '/' + f'classify_{relation}_pos.txt', encoding='utf-8') as f:
-        fs = list(set(f.readlines()))
-        for line in fs:
-            left_len = len(line.strip().split('\t')[4].split('丨'))
-            right_len = len(line.strip().split('\t')[5].split('丨'))
-            if left_len == right_len == 1 and line.strip().split('\t')[4].replace('|','') != '' and line.strip().split('\t')[5].replace('|','') != '':
-                causality.append((line.strip().split('\t')[4].replace('|',''), line.strip().split('\t')[5].replace('|',''), to_categorical(1, 3)))
-                causality.append((line.strip().split('\t')[5].replace('|',''), line.strip().split('\t')[4].replace('|',''), to_categorical(2, 3)))
+    relation_train = []
+    dirs = os.listdir(total_data_path)
+    for file in dirs:
+        if file.endswith(".txt"):
+            fs = open(total_data_path + '/' + file, encoding='utf-8')
+            relation_train = relation_train + list(set(fs.readlines()))
 
-    causality_neg = []
-    with open(total_data_path + '/' + f'classify_{relation}_neg.txt', encoding='utf-8') as f:
-        fs = list(set(f.readlines()))
-        for line in fs:
-            lens = len(line.strip().split('\t')[1].split('丨'))
-            if lens >= 2:
-                causality_neg.append((line.strip().split('\t')[1].split('丨')[0].replace('|',''), line.strip().split('\t')[1].split('丨')[1].replace('|',''), to_categorical(0, 3)))
-
-    causas_train = causality + random.sample(causality_neg, len(causality))
-    
-    random_order = list(range(len(causas_train)))
+    random_order = list(range(len(relation_train)))
     np.random.shuffle(random_order)
-    train_line = [causas_train[j] for i, j in enumerate(random_order) if i % 5 != 0]
-    test_line = [causas_train[j] for i, j in enumerate(random_order) if i % 5 == 0]
+    train_data = [relation_train[j] for i, j in enumerate(random_order) if i % 5 != 0]
+    test_data = [relation_train[j] for i, j in enumerate(random_order) if i % 5 == 0]
+    train_line = []
+    test_line = []
+    if is_bi_directional == 'T':
+        for line in train_data:
+            if line.strip().split('\t')[-1] == '1':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((front, to_categorical(1, 3)))
+                back = sens_tagging2(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((back, to_categorical(2, 3)))
+
+            if line.strip().split('\t')[-1] == '0':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((front, to_categorical(0, 3)))
+                back = sens_tagging2(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((back, to_categorical(0, 3)))
+                
+        for line in test_data:
+            if line.strip().split('\t')[-1] == '1':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((front, to_categorical(1, 3)))
+                back = sens_tagging2(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((back, to_categorical(2, 3)))
+
+            if line.strip().split('\t')[-1] == '0':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((front, to_categorical(0, 3)))
+                back = sens_tagging2(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((back, to_categorical(0, 3)))
+    else:
+        for line in train_data:
+            if line.strip().split('\t')[-1] == '1':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((front, to_categorical(1, 2)))
+
+            if line.strip().split('\t')[-1] == '0':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                train_line.append((front, to_categorical(0, 2)))
+
+        for line in test_data:
+            if line.strip().split('\t')[-1] == '1':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((front, to_categorical(1, 2)))
+
+            if line.strip().split('\t')[-1] == '0':
+                front = sens_tagging1(line.split('\t')[0], json.loads(line.split('\t')[3]), json.loads(line.split('\t')[4]))
+                test_line.append((front, to_categorical(0, 2)))
+
     return train_line, test_line
+
 
 class data_generator:
     """
@@ -84,10 +157,9 @@ class data_generator:
             X1, X2, Y = [], [], []
             for i in idxs:
                 d = self.data[i]
-                text1 = d[0][:self.maxlen]
-                text2 = d[1][:self.maxlen]
-                x1, x2 = self.tokenizer.encode(first=text1, second=text2)
-                y = d[2]
+                text = d[0][:self.maxlen]
+                x1, x2 = self.tokenizer.encode(first=text)
+                y = d[1]
                 X1.append(x1)
                 X2.append(x2)
                 Y.append([y])

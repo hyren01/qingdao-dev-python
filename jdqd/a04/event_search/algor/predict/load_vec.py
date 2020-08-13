@@ -38,9 +38,26 @@ def load_vec_data(cameo: str):
         # 读取文件中的向量
         x = comm.read_np(read_file_path)
 
-        logger.info(f"开始加载向量数据{read_file_path}。。。")
         for key, value in zip(cameo2id[cameo], x):
             data[key] = value
-        logger.info(f"{read_file_path}向量数据加载完成！")
+
+        return data
+
+
+def load_all_vec():
+    """
+    加载所有的向量文件到内存中
+    :return: data(dict)
+    """
+    data = {}
+    # 如果字典文件缺失则报错
+    if not os.path.exists(pre_config.cameo2id_path):
+        return data
+    else:
+        # cameo2id 字典 {cameo:[]}
+        cameo2id = comm.read_cameo2id(pre_config.cameo2id_path)
+
+        for cameo in cameo2id:
+            data.update(load_vec_data(cameo))
 
         return data

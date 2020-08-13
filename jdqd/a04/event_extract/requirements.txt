@@ -9,3 +9,4 @@ neuralcoref==4.0
 scikit-learn==0.19.1
 loguru==0.4.1
 paddlepaddle==1.8.2
+tqdm==4.41.0

@@ -132,6 +132,7 @@ def create_event(graph_db, event_id, short_sentence, event_datetime, event_tag):
     """
     if event_tag is None:
         event_tag = global_event_tag
+    short_sentence = str(short_sentence).replace("'", "\"")
     event_attribute = "event_id: '{event_id}', event_sentence: '{short_sentence}', event_date: " \
                       "'{event_datetime}'".format(event_id=event_id, short_sentence=short_sentence,
                                                   event_datetime=event_datetime)
@@ -197,7 +198,7 @@ def get_event_by_ids(graph_db, event_ids, event_tag, start_date, end_date):
     return event_result
 
 
-def get_event_rel_by_id(graph_db, event_id, event_tag):
+def get_event_rel_by_id(graph_db, event_id, event_tag, event_sentence):
     """
     在图数据库中根据事件id查询出对应的跟该事件相关联的所有事件节点及其对应关系。
 
@@ -214,7 +215,6 @@ def get_event_rel_by_id(graph_db, event_id, event_tag):
     cql_str = "MATCH (event1:{event_tag})-[relation]->(event2:{event_tag}) WHERE event1.event_id = '{event_id}' OR " \
               "event2.event_id = '{event_id}' RETURN event1,relation,event2".format(event_tag=event_tag,
                                                                                     event_id=event_id)
-    print(cql_str)
     results = graph_db.run(cql_str)
     # 事件关系数据
     result_link = []
@@ -241,6 +241,16 @@ def get_event_rel_by_id(graph_db, event_id, event_tag):
                 get_source_event_rel(result_data, target_event)
             else:
                 get_target_event_rel(result_data, source_event)
+    if not result_data:
+        source_event_rel = get_event_rel(event_id)
+        result_data.append({'id': event_id, 'name': event_sentence,
+                            'event_date': source_event_rel[0]["event_date"],
+                            'event_local': source_event_rel[0]["event_local"],
+                            'event_state': source_event_rel[0]["event_state"],
+                            'nentity_place': source_event_rel[0]["nentity_place"],
+                            'nentity_org': source_event_rel[0]["nentity_org"],
+                            'nentity_person': source_event_rel[0]["nentity_person"],
+                            'nentity_misc': source_event_rel[0]["nentity_misc"]})
     return result_link, result_data
 
 

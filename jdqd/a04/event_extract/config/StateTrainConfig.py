@@ -8,23 +8,16 @@
 """
 import feedwork.AppinfoConf as appconf
 from feedwork.utils.FileHelper import cat_path
+from jdqd.common.event_emm.model_utils import generate_trained_model_path
 
-# 模型相关参数
-model_type = "bert"
-# 模型参数
-config_path = 'chinese_roberta_wwm_ext_L-12_H-768_A-12/bert_config.json'
-config_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, config_path)
-# 初始化模型路径
-checkpoint_path = 'chinese_roberta_wwm_ext_L-12_H-768_A-12/bert_model.ckpt'
-checkpoint_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, checkpoint_path)
-# 模型字典路径
-dict_path = 'chinese_roberta_wwm_ext_L-12_H-768_A-12/vocab.txt'
-dict_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, dict_path)
+
 # 训练后模型保存路径
 trained_model_dir = "event_extract/event_state_trained_model"
 trained_model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, trained_model_dir)
 # 训练后模型名称
 trained_model_name = "state_model.h5"
+# 训练后模型路径
+trained_model_path = generate_trained_model_path(trained_model_dir, trained_model_name)
 # 训练集数据保存路径
 train_data_path = "event_extract/data/event_state_data/raw_data/train_data.json"
 train_data_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, train_data_path)

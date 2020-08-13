@@ -14,9 +14,9 @@ from bert4keras.models import build_transformer_model
 from bert4keras.backend import K
 from bert4keras.layers import LayerNormalization
 from keras.optimizers import Adam
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from feedwork.utils import logger
-from jdqd.common.event_emm.model_utils import seq_gather, generate_trained_model_path, TOKENIZER
+from jdqd.common.event_emm.model_utils import seq_gather, TOKENIZER
 from jdqd.a04.event_extract.algor.train.utils.event_state_data_util import DataGenerator, get_data
 import jdqd.a04.event_extract.config.StateTrainConfig as state_train_config
 import jdqd.common.event_emm.BertConfig as bert_config
@@ -26,8 +26,7 @@ GRAPH = tf.Graph()
 SESS = tf.Session(graph=GRAPH)
 
 # 创建训练后的保存路径,按照当前日期创建模型保存文件夹
-TRAINED_MODEL_PATH = generate_trained_model_path(state_train_config.trained_model_dir,
-                                                 state_train_config.trained_model_name)
+TRAINED_MODEL_PATH = state_train_config.trained_model_path
 # 加载训练集和验证集
 TRAIN_DATA, DEV_DATA = get_data(state_train_config.train_data_path, state_train_config.dev_data_path,
                                 state_train_config.supplement_data_dir)
@@ -156,7 +155,7 @@ class Evaluate(Callback):
          :param logs: 日志信息
          :return: None
         """
-        accuracy = self.evaluate()
+        accuracy, f1, precision, recall = self.evaluate()
         if accuracy > self.best:
             self.best = accuracy
             MODEL.save(TRAINED_MODEL_PATH, include_optimizer=True)
@@ -186,8 +185,9 @@ class Evaluate(Callback):
         y_true = [STATE2ID[event["state"]] for once in DEV_DATA for event in once["events"]]
         # 计算验证集准确率
         accuracy = accuracy_score(y_true, y_pred)
+        f1, precision, recall, _ = precision_recall_fscore_support(y_true, y_pred, average="macro")
 
-        return accuracy
+        return accuracy, f1, precision, recall
 
 
 def model_train():
@@ -203,8 +203,9 @@ def model_train():
             MODEL.fit_generator(TRAIN_D.__iter__(), steps_per_epoch=TRAIN_D.__len__(), epochs=40, callbacks=[evaluator])
             # 模型参数重载
             MODEL.load_weights(TRAINED_MODEL_PATH)
-            accuracy = evaluator.evaluate()
+            accuracy, f1, precision, recall = evaluator.evaluate()
             logger.info(f"accuracy:{accuracy}")
+            return accuracy, f1, precision, recall
 
 
 if __name__ == '__main__':

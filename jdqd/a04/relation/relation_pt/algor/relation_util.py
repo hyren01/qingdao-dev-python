@@ -58,7 +58,7 @@ def split_article_to_sentences(article):
     :param article:
     :return:
     """
-    article = re.sub(r'([。！？?])([^”’])', r"\1\n\2", article)  # 单字符断句符
+    article = re.sub(r'([。！？?;；])([^”’])', r"\1\n\2", article)  # 单字符断句符
     article = re.sub(r'(\.{6})([^”’])', r"\1\n\2", article)  # 英文省略号
     article = re.sub(r'(…{2})([^”’])', r"\1\n\2", article)  # 中文省略号
     article = re.sub(r'([。！？?][”’])([^，。！？?])', r'\1\n\2', article)

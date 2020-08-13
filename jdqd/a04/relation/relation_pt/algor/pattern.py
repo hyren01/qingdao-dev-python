@@ -231,8 +231,8 @@ def rule_scksk(sentence, keywords, reverse=False):
 
 
 def rule_sksks(sentence, keywords, reverse=False):
-    parts_order = [[1, 3], [0, 2], [4]]
-    pattern_reg = r'(.*)({})(.*)({})(.*)'
+    parts_order = [[2, 4], [1, 3], [5], [0]]
+    pattern_reg = r'(.*cm)(.*)({})(.*)({})(.*)'.replace('cm', comma_re)
     rule = Rule(keywords, pattern_reg, parts_order, reverse)
     return rule.extract(sentence)
 

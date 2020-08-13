@@ -5,9 +5,7 @@ from feedwork.utils import logger
 from jdqd.a04.event_interface.services.common.http_util import http_post
 from jdqd.a04.event_interface.config.project import Config
 
-
 config = Config()
-
 
 db = DatabaseWrapper()
 try:
@@ -21,10 +19,12 @@ try:
         res = http_post(data, config.relextract_interface_uri)
         response = json.loads(res)
         if response["status"] == "success":
-            db.execute(f"update t_article_msg_zh set is_relation='1',finish_date=%s,finish_time=%s "
-                       f"where article_id=%s",
-                       (date_util.sys_date("%Y-%m-%d"), date_util.sys_time("%H:%M:%S"), aid))
-            db.commit()
+            db2 = DatabaseWrapper()
+            db2.execute(f"update t_article_msg_zh set is_relation='1',finish_date=%s,finish_time=%s "
+                        f"where article_id=%s",
+                        (date_util.sys_date("%Y-%m-%d"), date_util.sys_time("%H:%M:%S"), aid))
+            db2.commit()
+            db2.close()
         else:
             logger.error(f"error,article_id:{aid}")
 except Exception as e:

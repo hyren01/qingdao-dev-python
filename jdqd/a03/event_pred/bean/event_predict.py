@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """
+实体类，用于封装预测时用的信息，不对应数据库表。
 @Author: zhang xin
 @Time: 2020/6/16 10:38
 desc:
@@ -14,7 +15,8 @@ class EventPredict(object):
         self._lag_date = None
         self._pca = None
         self._days = None
-
+        self._kernel_size = None
+        self._pool_size = None
         self._model_dir = ''
 
     @property
@@ -56,6 +58,22 @@ class EventPredict(object):
     @days.setter
     def days(self, days: int):
         self._days = days
+
+    @property
+    def kernel_size(self):
+        return self._days
+
+    @kernel_size.setter
+    def kernel_size(self, kernel_size: int):
+        self._kernel_size = kernel_size
+
+    @property
+    def pool_size(self):
+        return self._pool_size
+
+    @pool_size.setter
+    def pool_size(self, pool_size: int):
+        self._pool_size = pool_size
 
     @property
     def model_dir(self):

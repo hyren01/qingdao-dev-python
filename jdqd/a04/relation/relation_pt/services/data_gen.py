@@ -318,6 +318,78 @@ def gen_relation(relation, articles_dir, use_db=False):
                   classify_neg_fp)
 
 
+def coordinate_trans(line):
+    """
+    谓语动词的坐标转换，因为数据处理过程中存在分句，事件抽取处理的是分句后的句子，返回的谓语坐标不是在完整句子中的坐标，
+    因此需要转换
+    :param line: 原始语料，格式：原句\关键词{kw1：[x1,y1], kw2:[x2, y2]...}\t左句\t右句\t左事件集合\t右事件集合，
+                 这里的左句、右句并不是位置上的左右，而是关系上的左右
+    :return: 格式与输入相同，只改变部分谓语的坐标
+    """
+    import re
+    conts = line.split('\t')
+    text, key_word, left_sent, right_sent, left_event, right_event = conts[0], conts[1], conts[2], conts[3], conts[4], \
+                                                                     conts[5].strip('\n')
+    # 抽取所有的关键词坐标，两两一组表示某个关键词的坐标，注意这里的关键词坐标和后面的谓语坐标表示有些不同，
+    # 例如：而且[35, 37](关键词），碰面[17， 18](谓语)
+    kw_coord = re.findall('\d+', key_word)
+    kw_coord = [int(i) for i in kw_coord]
+    kw_coord.sort()
+    # print(kw_coord)
+    new_text = ''
+    # 删除原句中的关联词，通过关键词坐标将原始句子切片后选择非关键词部分重新组合为新句子
+    for i, ind in enumerate(kw_coord):
+        if i == 0:
+            new_text += text[:ind]
+        elif i == len(kw_coord) - 1:
+            new_text += text[ind:]
+        elif i % 2 == 0:
+            new_text += text[kw_coord[i-1]: ind]
+    # 事件集合如果存在多个事件会用丨分割（中文的“gun”）
+    left_events = left_event.split('丨')
+    right_events = right_event.split('丨')
+    # 遍历所有事件修改触发词的坐标，通过事件对应的左句或右句对新句子进行split，计算左句或右句前面的字符个数
+    events = []
+    for event in left_events:
+        event_coord = event.split('|')[3]
+        if event_coord != '[]':
+            coord1, coord2 = re.findall('\d+', event_coord)
+            add_len = len(new_text.split(left_sent)[0])
+            coord1_new, coord2_new = int(coord1) + add_len, int(coord2) + add_len
+            # 新坐标需要与关键词坐标进行对比，如果小于等于关键词坐标，需要加上关键词的长度
+            for i, coord in enumerate(kw_coord):
+                if i % 2 != 0:
+                    continue
+                if coord1_new >= coord:
+                    coord1_new += kw_coord[i + 1] - coord
+                    coord2_new += kw_coord[i + 1] - coord
+            new_event_coord = str([coord1_new, coord2_new])
+            event = event.replace(event_coord, new_event_coord)
+        events.append(event)
+    # 这里采用重新拼事件集合，如果用替换的方式，可能会把其他事件的坐标替换掉
+    new_left_event = '丨'.join(events)
+    events = []
+    for event in right_events:
+        event_coord = event.split('|')[3]
+        if event_coord != '[]':
+            coord1, coord2 = re.findall('\d+', event_coord)
+            add_len = len(new_text.split(right_sent)[0])
+            coord1_new, coord2_new = int(coord1) + add_len, int(coord2) + add_len
+            # 新坐标需要与关键词坐标进行对比，如果小于等于关键词坐标，需要加上关键词的长度
+            for i, coord in enumerate(kw_coord):
+                if i % 2 != 0:
+                    continue
+                if coord1_new >= coord:
+                    coord1_new += kw_coord[i+1] - coord
+                    coord2_new += kw_coord[i+1] - coord
+            new_event_coord = str([coord1_new, coord2_new])
+            event = event.replace(event_coord, new_event_coord)
+        events.append(event)
+    new_right_event = '丨'.join(events)
+    line = '\t'.join([text, key_word, left_sent, right_sent, new_left_event, new_right_event]) + '\n'
+    return line
+
+
 if __name__ == '__main__':
     # ner_data_fn = 'data_parallel.txt'
     # ner_data_neg_fn = 'data_parallel_neg.txt'

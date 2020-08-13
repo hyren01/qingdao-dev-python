@@ -29,10 +29,10 @@ trained_model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, trained_model_dir)
 # 训练后模型名称
 trained_model_name = "relation_key_extract.h5"
 # 训练集数据保存路径
-train_data_path = "relation_key_extract/relation_key_extract_data"
+train_data_path = "relation_key_extract/relation_key_extract_data/train_further_line.txt"
 train_data_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, train_data_path)
 #训练集数据保存路径
-dev_data_path = "relation_key_extract/relation_key_extract_data"
+dev_data_path = "relation_key_extract/relation_key_extract_data/test_further_line.txt"
 dev_data_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, dev_data_path)
 # 训练后测试集预测结果
 pred_path = 'relation_key_extract/pred_test/test_pred.txt'
@@ -40,8 +40,6 @@ pred_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, pred_path)
 #标签编码目录
 label_path = 'relation_key_extract/relation_key_extract_data/tag_dict.txt'
 label_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, label_path)
-#训练关系类别
-relation = 'further'
 #网络单元
 lstmDim = 64
 # 循环

@@ -5,9 +5,9 @@
 desc:
 """
 import feedwork.AppinfoConf as appconf
-import numpy as np
 import pandas as pd
 import re
+import numpy as np
 from jdqd.a03.event_pred.algor.common.pgsql_util import query_data_table_2pandas, query_event_table_2pandas
 from jdqd.a03.event_pred.algor.common.preprocess import events_one_hot
 from jdqd.a03.event_pred.enum.event_type import EventType
@@ -99,13 +99,6 @@ def __transform_df(df, date_col):
 
 
 def __transform_date_str(date_str):
-    """
-    转换并格式化日期字符串。将yyyy年MM月dd日、yyyy-M-d、yyyy/MM/dd转换成yyyy-MM-dd格式。
-    Args:
-      date_str: string，日期
-
-    Returns: string，日期
-    """
     if date_str is None or date_str == '':
         return
     date_str = date_str.split(" ")[0]  # 处理yyyy-MM-dd HH:mm:ss的情况，只要yyyy-MM-dd

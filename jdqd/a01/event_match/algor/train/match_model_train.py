@@ -5,9 +5,8 @@
 """
 事件匹配模型训练模块
 """
-import os
 import numpy as np
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from bert4keras.backend import K
 from bert4keras.models import build_transformer_model
 from bert4keras.optimizers import Adam
@@ -15,33 +14,29 @@ from keras.layers import Dense, Dropout, Lambda
 from keras.models import Model
 from keras.callbacks import Callback
 from jdqd.a01.event_match.algor.common.utils import load_data, DataGenerator
-from jdqd.common.event_emm.model_utils import TOKENIZER
+from jdqd.common.event_emm.model_utils import TOKENIZER, adversarial_training
 from feedwork.utils import logger
 import jdqd.a01.event_match.config.MatchTrainConfig as match_train_config
 import jdqd.common.event_emm.BertConfig as bert_config
 
 # 判断是否需要进行初次训练或者二次训练
-if not os.path.exists(match_train_config.first_trained_model_path):
-    logger.info("加载首次训练路径。。。")
-    TRAINED_MODEL_PATH = match_train_config.first_trained_model_path
-    TRAIN_DATA_PATH = match_train_config.first_train_data_path
-    DEV_DATA_PATH = match_train_config.first_dev_data_path
-    TEST_DATA_PATH = match_train_config.first_test_data_path
-else:
-    logger.info("加载二次训练路径。。。")
-    TRAINED_MODEL_PATH = match_train_config.second_trained_model_path
-    TRAIN_DATA_PATH = match_train_config.second_train_data_path
-    DEV_DATA_PATH = match_train_config.second_dev_data_path
-    TEST_DATA_PATH = match_train_config.second_test_data_path
+
+TRAINED_MODEL_PATH = match_train_config.trained_model_path
+TRAIN_DATA_PATH = match_train_config.train_data_path
+DEV_DATA_PATH = match_train_config.dev_data_path
+TEST_DATA_PATH = match_train_config.test_data_path
 
 # 加载数据
 TRAIN_DATA = load_data(TRAIN_DATA_PATH)
 DEV_DATA = load_data(DEV_DATA_PATH)
 TEST_DATA = load_data(TEST_DATA_PATH)
 # 数据生成器
-TRAIN_DATAGENERATOR = DataGenerator(TRAIN_DATA, TOKENIZER, max_length=match_train_config.maxlen, batch_size=match_train_config.batch_size)
-DEV_DATAGENERATOR = DataGenerator(DEV_DATA, TOKENIZER, max_length=match_train_config.maxlen, batch_size=match_train_config.batch_size)
-TEST_DATAGENERATOR = DataGenerator(TEST_DATA, TOKENIZER, max_length=match_train_config.maxlen, batch_size=match_train_config.batch_size)
+TRAIN_DATAGENERATOR = DataGenerator(TRAIN_DATA, TOKENIZER, max_length=match_train_config.maxlen,
+                                    batch_size=match_train_config.batch_size, random=True)
+DEV_DATAGENERATOR = DataGenerator(DEV_DATA, TOKENIZER, max_length=match_train_config.maxlen,
+                                  batch_size=match_train_config.batch_size, random=False)
+TEST_DATAGENERATOR = DataGenerator(TEST_DATA, TOKENIZER, max_length=match_train_config.maxlen,
+                                   batch_size=match_train_config.batch_size, random=False)
 
 
 def build_model():
@@ -50,7 +45,8 @@ def build_model():
     :return: model
     """
     # 构建bert模型
-    bert_model = build_transformer_model(config_path=bert_config.config_path, checkpoint_path=bert_config.checkpoint_path,
+    bert_model = build_transformer_model(config_path=bert_config.config_path,
+                                         checkpoint_path=bert_config.checkpoint_path,
                                          model=bert_config.model_type, return_keras_model=False)
     # l为模型内部的层名，格式为--str
     for l in bert_model.layers:
@@ -94,7 +90,10 @@ def evaluate(data):
         y_pred_total.extend(np.reshape(y_pred, (-1,)).tolist())
         y_true_total.extend(np.reshape(y_true, (-1,)).tolist())
 
-    return accuracy_score(y_true_total, y_pred_total)
+    accuracy = accuracy_score(y_true_total, y_pred_total)
+    precison, recall, f1, _ = precision_recall_fscore_support(y_true_total, y_pred_total)
+
+    return accuracy, f1, precison, recall
 
 
 class Evaluator(Callback):
@@ -119,7 +118,8 @@ class Evaluator(Callback):
             K.set_value(self.model.optimizer.lr, lr)
             self.passed += 1
         elif self.params['steps'] <= self.passed < self.params['steps'] * 2:
-            lr = (2 - (self.passed + 1.) / self.params['steps']) * (match_train_config.learning_rate - match_train_config.min_learning_rate)
+            lr = (2 - (self.passed + 1.) / self.params['steps']) * (
+                        match_train_config.learning_rate - match_train_config.min_learning_rate)
             lr += match_train_config.min_learning_rate
             K.set_value(self.model.optimizer.lr, lr)
             self.passed += 1
@@ -132,14 +132,16 @@ class Evaluator(Callback):
         :return: None
         """
 
-        dev_accuracy = evaluate(DEV_DATAGENERATOR)
+        dev_accuracy, dev_f1, dev_precison, dev_recall = evaluate(DEV_DATAGENERATOR)
         # 如果验证集准确率比历史最高还要高，则保存模型
         if dev_accuracy > self.best:
             self.best = dev_accuracy
             MATCH_MODEL.save(TRAINED_MODEL_PATH, include_optimizer=True)
-        test_accuracy = evaluate(TEST_DATAGENERATOR)
+        test_accuracy, test_f1, test_precison, test_recall = evaluate(TEST_DATAGENERATOR)
         logger.info(
             f'dev_accuracy:{dev_accuracy}.4f, best_dev_accuracy:{self.best}.4f, test_f_score: {test_accuracy}.4f\n')
+        logger.info(
+            f'test_accuracy: {test_accuracy},test_f1:{test_f1},test_precison:{test_precison}test_recall:{test_recall}\n')
 
     @staticmethod
     def flat_lists(lists):
@@ -162,22 +164,21 @@ def model_train():
     """
     # 构建评估对象
     evaluator = Evaluator()
-    # 判断模型是否是第一次训练，是否需要重载,如果不需要重载则做第一次训练，否则，重载模型做二次训练
-    if not os.path.exists(match_train_config.first_trained_model_path):
-        logger.info("开始首次训练模型！")
-    else:
-        logger.info("开始加载首次训练的模型。。。")
-        MATCH_MODEL.load_weights(match_train_config.first_trained_model_path)
-        logger.info("开始二次训练模型！")
+
+    # 构造对抗攻击训练
+    adversarial_training(MATCH_MODEL, 'Embedding-Token', 0.2)
 
     # 开始模型训练
     MATCH_MODEL.fit_generator(TRAIN_DATAGENERATOR.forfit(),
                               steps_per_epoch=TRAIN_DATAGENERATOR.__len__(),
                               epochs=match_train_config.epoch,
                               callbacks=[evaluator])
+    # 重载模型参数
+    MATCH_MODEL.load_weights(match_train_config.trained_model_path)
     # 使用测试集评估模型效果
-    accuracy = evaluate(TEST_DATAGENERATOR)
-    logger.info(f'accuracy_score: {accuracy}.4f\n')
+    test_accuracy, test_f1, test_precison, test_recall = evaluate(TEST_DATAGENERATOR)
+    logger.info(
+        f'test_accuracy: {test_accuracy},test_f1:{test_f1},test_precison:{test_precison}test_recall:{test_recall}\n')
 
 
 if __name__ == '__main__':

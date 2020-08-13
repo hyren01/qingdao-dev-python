@@ -8,6 +8,8 @@
  使用条件批归一化进行向量融合
  对传入的数据进行处理，不再进行字符串的查找，而是精准传入下标，减小字符匹检索造成的问题
 """
+import traceback
+import os
 import numpy as np
 import tensorflow as tf
 from keras.layers import Input, Lambda, Dense, Average
@@ -17,24 +19,18 @@ from bert4keras.models import build_transformer_model
 from bert4keras.backend import K, set_gelu
 from bert4keras.optimizers import Adam
 from bert4keras.layers import LayerNormalization
-from jdqd.common.event_emm.model_utils import seq_gather, generate_trained_model_path, TOKENIZER, adversarial_training
+from jdqd.common.event_emm.model_utils import seq_gather, TOKENIZER, adversarial_training
 from jdqd.a04.event_extract.algor.train.utils.event_extract_data_util import DataGenerator, get_data
 from feedwork.utils import logger
+from feedwork.utils.FileHelper import cat_path
 import jdqd.a04.event_extract.config.ExtractTrainConfig as extract_train_config
 import jdqd.common.event_emm.BertConfig as bert_config
-
 
 # 设置激活函数
 set_gelu('tanh')
 # 构建默认图和会话
 GRAPH = tf.Graph()
 SESS = tf.Session(graph=GRAPH)
-# 训练后模型保存路径
-TRAINED_MODEL_PATH = generate_trained_model_path(extract_train_config.trained_model_dir,
-                                                 extract_train_config.trained_model_name)
-# 获取训练集、验证集
-TRAIN_DATA, DEV_DATA = get_data(extract_train_config.train_data_path, extract_train_config.dev_data_path,
-                                extract_train_config.supplement_data_dir)
 
 
 def build_model():
@@ -227,11 +223,8 @@ def build_model():
     return trigger_model, subject_model, object_model, time_model, loc_model, negative_model, train_model
 
 
-# 搭建模型
-TRIGGER_MODEL, OBJECT_MODEL, SUBJECT_MODEL, LOC_MODEL, TIME_MODEL, NEGATIVE_MODEL, TRAIN_MODEL = build_model()
-
-
-def extract_items(text_in: str):
+def extract_items(text_in: str, maxlen, trigger_model, object_model, subject_model, loc_model, time_model,
+                  negative_model):
     """
     传入待预测的文本字符串，调用各个模型，句子中的事件论元进行抽取，先抽取动词，然后使用动词下标和句子张量预测其它论元。
     :param text_in: （str）句子字符串
@@ -250,12 +243,13 @@ def extract_items(text_in: str):
         raise TypeError
 
     # 对输入的句子进行分词
-    _tokens = TOKENIZER.tokenize(text_in[:extract_train_config.maxlen])
+    _tokens = TOKENIZER.tokenize(text_in[:maxlen])
     # 对输入的句子进行ids化
-    _text_token_ids, _text_segment_ids = TOKENIZER.encode(first_text=text_in[:extract_train_config.maxlen])
+    _text_token_ids, _text_segment_ids = TOKENIZER.encode(first_text=text_in[:maxlen])
     _text_token_ids, _text_segment_ids = np.array([_text_token_ids]), np.array([_text_segment_ids])
-    _trigger_start_pre, _trigger_end_pre = TRIGGER_MODEL.predict([_text_token_ids, _text_segment_ids])
-    _trigger_start_pre, _trigger_end_pre = np.where(_trigger_start_pre[0] > 0.5)[0], np.where(_trigger_end_pre[0] > 0.4)[0]
+    _trigger_start_pre, _trigger_end_pre = trigger_model.predict([_text_token_ids, _text_segment_ids])
+    _trigger_start_pre, _trigger_end_pre = np.where(_trigger_start_pre[0] > 0.5)[0], \
+                                           np.where(_trigger_end_pre[0] > 0.4)[0]
     _triggers = []
     for i in _trigger_start_pre:
         j = _trigger_end_pre[_trigger_end_pre >= i]
@@ -271,15 +265,20 @@ def extract_items(text_in: str):
         # 动词下标
         _trigger_start_index, _trigger_end_index = np.array([_s[1:] for _s in _triggers]).T.reshape((2, -1, 1))
         # 宾语
-        _object_start_pre, _object_end_pre = OBJECT_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        _object_start_pre, _object_end_pre = object_model.predict(
+            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
         # 主语
-        _subject_start_pre, _subject_end_pre = SUBJECT_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        _subject_start_pre, _subject_end_pre = subject_model.predict(
+            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
         # 地点
-        _loc_start_pre, _loc_end_pre = LOC_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        _loc_start_pre, _loc_end_pre = loc_model.predict(
+            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
         # 时间
-        _time_start_pre, _time_end_pre = TIME_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        _time_start_pre, _time_end_pre = time_model.predict(
+            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
         # 否定词
-        _negative_start_pre, _negative_end_pre = NEGATIVE_MODEL.predict([_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
+        _negative_start_pre, _negative_end_pre = negative_model.predict(
+            [_text_token_ids, _text_segment_ids, _trigger_start_index, _trigger_end_index])
 
         for i, _trigger in enumerate(_triggers):
             objects = []
@@ -288,17 +287,21 @@ def extract_items(text_in: str):
             times = []
             privatives = []
             # 宾语下标
-            _object_start_index, _object_end_index = np.where(_object_start_pre[i] > 0.5)[0], np.where(_object_end_pre[i] > 0.4)[0]
+            _object_start_index, _object_end_index = np.where(_object_start_pre[i] > 0.5)[0], \
+                                                     np.where(_object_end_pre[i] > 0.4)[0]
             # 主语下标
-            _subject_start_index, _subject_end_index = np.where(_subject_start_pre[i] > 0.5)[0], np.where(_subject_end_pre[i] > 0.4)[0]
+            _subject_start_index, _subject_end_index = np.where(_subject_start_pre[i] > 0.5)[0], \
+                                                       np.where(_subject_end_pre[i] > 0.4)[0]
             # 地点下标
             _loc_start_index, _loc_end_index = np.where(_loc_start_pre[i] > 0.5)[0], np.where(_loc_end_pre[i] > 0.4)[0]
             # 时间下标
-            _time_start_index, _time_end_index = np.where(_time_start_pre[i] > 0.5)[0], np.where(_time_end_pre[i] > 0.4)[0]
+            _time_start_index, _time_end_index = np.where(_time_start_pre[i] > 0.5)[0], \
+                                                 np.where(_time_end_pre[i] > 0.4)[0]
             # 否定词下标
-            _negative_start_index, _negative_end_index = np.where(_negative_start_pre[i] > 0.5)[0], np.where(_negative_end_pre[i] > 0.4)[0]
+            _negative_start_index, _negative_end_index = np.where(_negative_start_pre[i] > 0.5)[0], \
+                                                         np.where(_negative_end_pre[i] > 0.4)[0]
 
-            #开始抽取各个论元部分
+            # 开始抽取各个论元部分
             for i in _object_start_index:
                 j = _object_end_index[_object_end_index >= i]
                 if len(j) > 0:
@@ -378,10 +381,29 @@ class Evaluate(Callback):
     继承Callback类，改写内部方法,调整训练过程中的学习率，随着训练步数增加，逐渐减小学习率，根据指标保存最优模型。
     """
 
-    def __init__(self, ):
+    def __init__(self, dev_data, maxlen, trained_model_path, trigger_model,
+                 object_model, subject_model, loc_model, time_model, negative_model, train_model,
+                 max_learning_rate=extract_train_config.learning_rate,
+                 min_learning_rate=extract_train_config.min_learning_rate):
         Callback.__init__(self, )
         self.best = 0.
         self.passed = 0
+        self.maxlen = maxlen
+        self.dev_data = dev_data
+        # 训练后模型路径
+        self.trained_mdoel_path = trained_model_path
+        # 学习率
+        self.max_learning_rate = max_learning_rate
+        self.min_learning_rate = min_learning_rate
+        # 论元模型
+        self.trigger_model = trigger_model
+        self.object_model = object_model
+        self.subject_model = subject_model
+        self.negative_model = negative_model
+        self.time_model = time_model
+        self.loc_model = loc_model
+        # 主模型
+        self.train_model = train_model
 
     def on_batch_begin(self, batch, logs=None):
         """
@@ -399,8 +421,8 @@ class Evaluate(Callback):
         # 当训练或的步数大于一个循环设定的步数且小于两倍设定步数时，也就是第二个循环学习率随步数线性减小至最小学习率
         # 在接下来的训练中一直保持最小学习率
         elif self.params['steps'] <= self.passed < self.params['steps'] * 2:
-            lr = (2 - (self.passed + 1.) / self.params['steps']) * (extract_train_config.learning_rate - extract_train_config.min_learning_rate)
-            lr += extract_train_config.min_learning_rate
+            lr = (2 - (self.passed + 1.) / self.params['steps']) * (self.max_learning_rate - self.min_learning_rate)
+            lr += self.min_learning_rate
             K.set_value(self.model.optimizer.lr, lr)
             self.passed += 1
 
@@ -414,7 +436,7 @@ class Evaluate(Callback):
         f1, precision, recall = self.evaluate()
         if f1 > self.best:
             self.best = f1
-            TRAIN_MODEL.save(TRAINED_MODEL_PATH, include_optimizer=True)
+            self.train_model.save(self.trained_mdoel_path, include_optimizer=True)
         logger.info(f'f1: {f1}.4f, precision: {precision}.4f, recall: {recall}.4f, best f1: {self.best}.4f\n')
 
     @staticmethod
@@ -429,8 +451,7 @@ class Evaluate(Callback):
             all_elements.extend(lt)
         return all_elements
 
-    @staticmethod
-    def evaluate():
+    def evaluate(self, ):
         """
         衡量元素将关系，计算模型在验证集上的f1\precision\recall
         :return: f1(float), precision(float), recall(float)
@@ -438,9 +459,10 @@ class Evaluate(Callback):
 
         a, b, c = 1e-10, 1e-10, 1e-10
 
-        for d in iter(DEV_DATA):
+        for d in iter(self.dev_data):
             # 调用模型预测测试集中的事件
-            extract_res = extract_items(d['sentence'])
+            extract_res = extract_items(d['sentence'], self.maxlen, self.trigger_model, self.object_model,
+                                        self.subject_model, self.loc_model, self.time_model, self.negative_model)
             # 存储预测事件的集合
             _pred = set()
             # 存储真实事件的集合
@@ -482,35 +504,76 @@ class Evaluate(Callback):
         return f1, precision, recall
 
 
-def model_train():
+def model_train(version, model_id, trained_model_dir="", data_dir="", all_steps=0, maxlen=160, epoch=40, batch_size=8,
+                max_learning_rate=5e-5, min_learning_rate=1e-5, model_type="roberta"):
     """
-    进行模型训练
-    :return: None
+    进行模型训练的主函数，搭建模型，加载模型数据，根据传入的参数进行模型训练
+    :param version: 模型版本
+    :param model_id: 模型编号
+    :param data_dir: 补充数据的文件夹路径
+    :param trained_model_dir: 训练后模型存放路径
+    :param all_steps: 模型训练步数
+    :param maxlen: 最大长度
+    :param epoch: 循环次数
+    :param batch_size: 批次大小
+    :param max_learning_rate: 最大学习率
+    :param min_learning_rate: 最小学习率
+    :param version: 模型版本号
+    :param model_id: 模型id
+    :param model_type: 预训练模型类型，现在不用，后期会用到，
+    :return: status, F1, precision, recall, corpus_num
     """
-    with SESS.as_default():
-        with SESS.graph.as_default():
-            # 构造训练数据生成器
-            train_d = DataGenerator(TOKENIZER, extract_train_config.maxlen, TRAIN_DATA, extract_train_config.batch_size)
-            # 构造callback模块的评估类
-            evaluator = Evaluate()
+    try:
+        # 补充数据文件夹更换
+        if data_dir:
+            extract_train_config.supplement_data_dir = data_dir
+        # 判断训练后模型路径是否存在
+        if not os.path.exists(trained_model_dir):
+            os.makedirs(trained_model_dir)
+        # 训练后模型路径
+        trained_model_path = cat_path(trained_model_dir, f"extract_model_{version}_{model_id}")
 
-            # 如果训练数据小于5000，则设置内部循环步数1000次为一个循环，否则集使用训练数据个数/batch_size计算得到的步数
-            if len(TRAIN_DATA) < 5000:
-                all_steps = 1000
-            else:
-                all_steps = train_d.__len__()
+        # 获取训练集、验证集
+        train_data, dev_data = get_data(extract_train_config.train_data_path, extract_train_config.dev_data_path,
+                                        data_dir)
+        # 搭建模型
+        trigger_model, object_model, subject_model, loc_model, time_model, negative_model, train_model = build_model()
+        # 构造训练数据生成器
+        train_d = DataGenerator(TOKENIZER, maxlen, train_data, batch_size)
 
-            # 构造对抗攻击训练
-            adversarial_training(TRAIN_MODEL, 'Embedding-Token', 0.1)
+        with SESS.as_default():
+            with SESS.graph.as_default():
+                # 构造callback模块的评估类
+                evaluator = Evaluate(dev_data, maxlen, trained_model_path,
+                                     trigger_model, object_model, subject_model, loc_model, time_model, negative_model,
+                                     train_model, max_learning_rate, min_learning_rate)
+                # 如果训练数据小于5000，则设置内部循环步数1000次为一个循环，否则集使用训练数据个数/batch_size计算得到的步数
+                if all_steps:
+                    pass
+                elif len(train_data) < 5000:
+                    all_steps = 1000
+                else:
+                    all_steps = train_d.__len__()
 
-            # 模型训练
-            TRAIN_MODEL.fit_generator(train_d.__iter__(), steps_per_epoch=all_steps, epochs=extract_train_config.epoch,
-                                      callbacks=[evaluator])
+                # 构造对抗攻击训练
+                adversarial_training(train_model, 'Embedding-Token', 0.1)
 
-            # 将验证集预测结果保存到文件中，暂时注释掉
-            # model_test(DEV_DATA)
-            f1, precision, recall = evaluator.evaluate()
-            logger.info(f"f1:{f1}, precision:{precision}, recall:{recall}")
+                # 模型训练
+                train_model.fit_generator(train_d.__iter__(), steps_per_epoch=all_steps, epochs=epoch,
+                                          callbacks=[evaluator])
+                # 重载模型参数
+                train_model.load_weights(trained_model_path)
+                # 将验证集预测结果保存到文件中，暂时注释掉
+                f1, precision, recall = evaluator.evaluate()
+                logger.info(f"f1:{f1}, precision:{precision}, recall:{recall}")
+
+        return {"status": "success", "version": version, "model_id": model_id,
+                "results": {"f1": f1, "precison": precision, "recall": recall},
+                "corpus_num": {"train_data": len(train_data), "dev_data": len(dev_data)}}
+    except:
+        trace = traceback.format_exc()
+        logger.error(trace)
+        return {"status": "failed", "results": trace}
 
 
 if __name__ == '__main__':
@@ -518,8 +581,12 @@ if __name__ == '__main__':
     # with SESS.as_default():
     #     with SESS.graph.as_default():
     #         evaluator = Evaluate()
-    #         TRAIN_MODEL.load_weights(TRAINED_MODEL_PATH)
+    #         TRAIN_MODEL.load_weights(extract_train_config.trained_model_path)
     #         f1, precision, recall = evaluator.evaluate()
     #         logger.info(f"f1:{f1}, precision:{precision}, recall:{recall}")
 
-    model_train()
+    model_train(version="0", model_id="0", trained_model_dir=extract_train_config.trained_model_dir,
+                data_dir=extract_train_config.supplement_data_dir, maxlen=extract_train_config.maxlen,
+                epoch=extract_train_config.epoch, batch_size=extract_train_config.batch_size,
+                max_learning_rate=extract_train_config.learning_rate,
+                min_learning_rate=extract_train_config.min_learning_rate, model_type="roberta")

@@ -121,18 +121,18 @@ def date_to_index(date_str, dates):
     return dates.index(date_str)
 
 
-def gen_input_by_input_start_row(values_pca, input_start_row, input_len):
+def gen_input_by_input_start_row(data, input_start_row, input_len):
     """
     根据 encoder 输入序列开始下标以及 encoder 输入长度生成一个输入样本
     Args:
-      values_pca: 降维后数据表数据
+      data: 数据表数据
       input_start_row: encoder 输入序列开始下标
       input_len: encoder 输入序列长度
 
     Returns:
       一个 encoder 输入序列样本, 为降维后数据表数据的一个切片
     """
-    input_sample = values_pca[input_start_row: input_start_row + input_len]
+    input_sample = data[input_start_row: input_start_row + input_len]
     return input_sample
 
 
@@ -186,7 +186,7 @@ def get_event_num(outputs, events_set):
     return events_num
 
 
-def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dates, pred_start_date, pred_end_date):
+def gen_samples_by_pred_date(data, events_p_oh, input_len, output_len, dates, pred_start_date, pred_end_date):
     """
     以下所有范围中的滑动，步长都是1，每次滑动得到一个样本，一个样本包括特征跟事件类别。该方法返回样本数组。
     1、min_output_start_index、max_output_end_index日期下标范围内值的是事件数据的数据范围，
@@ -198,7 +198,7 @@ def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dat
     5、模型需要的数据是[[1],...,[15],[16],...,[20]]，[1]到[15]是特征数据，[16]到[20]是事件类别数据，
         含义是：根据[1]到[15]范围内15天的特征，预测未来5天（[16]到[20]确认）的事件类别。
     Args:
-      values_pca: 降维后数据表数据
+      data: 数据表数据
       events_p_oh: one-hot 形式的补全事件列表
       input_len: encoder 输入序列长度
       output_len: decoder 输出序列长度, 即预测天数
@@ -207,7 +207,9 @@ def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dat
       pred_end_date: 截止日期
 
     Returns:
-      decoder 输出序列在开始预测日期与预测截止日期之间的样本, 包含输入及输出序列
+      decoder 模型输出(预测)日期介于预测开始日期与结束日期之间的所需数据集, 包含特征及标签,
+      特征维度: (样本数, 之后天数, 特征数)
+      标签维度: (样本数, 预测天数, 事件类别个数)
     """
     # 基于pred_start_date、pred_end_date在dates中搜索，能知道当前日期所在样本数据中的位置
     min_output_start_index = date_to_index(pred_start_date, dates)
@@ -218,8 +220,7 @@ def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dat
         raise RuntimeError("输入的结束日期无法在数据中找到")
     # 该行代码能找到特征数据开始日期下标 TODO 该行代码的加减法由日期排序方式来决定，日期升序排序即为减法
     min_input_start_row = min_output_start_index - input_len
-    if min_input_start_row < 0:
-        raise RuntimeError("输入的开始日期已经超过数据的最小日期范围")
+    min_input_start_row = 0 if min_input_start_row < 0 else min_output_start_index
     # min_input_start_row = max(min_input_start_row, 0)
     # 该行代码能找到特征数据结束日期下标 TODO The same
     max_input_end_row = max_output_end_index - output_len
@@ -230,20 +231,20 @@ def gen_samples_by_pred_date(values_pca, events_p_oh, input_len, output_len, dat
     if min_input_start_row < 0:
         raise RuntimeError("输入的结束日期过小，无法满足前推滞后期天数")
     # 生成特征样本数据
-    inputs = [gen_input_by_input_start_row(values_pca, start_row, input_len)
+    inputs = [gen_input_by_input_start_row(data, start_row, input_len)
               for start_row in range(min_input_start_row, max_input_start_row + 1)]
     # 生成事件样本数据
     outputs = [gen_output_by_input_start_row(events_p_oh, start_row, input_len, output_len)
                for start_row in range(min_input_start_row, max_input_start_row + 1)]
 
-    return np.array(inputs), np.array(outputs)
+    return np.array(inputs), np.array(outputs).astype(int)
 
 
-def gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date):
+def gen_inputs_by_pred_start_date(data, input_len, dates, pred_start_date):
     """
     获取起始预测日期之后的 encoder 输入数据
     Args:
-      values_pca: 降维后数据表数据
+      data: 数据表数据
       input_len: encoder 输入序列长度
       dates: 数据表日期列表
       pred_start_date: 开始预测日期
@@ -251,6 +252,7 @@ def gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
     Returns:
       起始预测日期之后对应的 encoder 输入序列, 对应的日期列表
     """
+    # @todo(zhxin): 处理界限问题
     pred_start_row = date_to_index(pred_start_date, dates)
     # 用于预测的每一个样本对应的特征数据开始下标
     min_input_start_row = pred_start_row - input_len
@@ -258,7 +260,7 @@ def gen_inputs_by_pred_start_date(values_pca, input_len, dates, pred_start_date)
         raise RuntimeError("开始预测日期错误，该日期之前已无数据")
     # 特征表样本数据行数（日期序列） - 滞后期（input_len）能得到预测的每一个样本对应的特征数据结束下标
     max_input_start_row = len(dates) - input_len
-    input_ = [gen_input_by_input_start_row(values_pca, data_index, input_len)
+    input_ = [gen_input_by_input_start_row(data, data_index, input_len)
               for data_index in range(min_input_start_row, max_input_start_row + 1)]
     dates_ = dates[pred_start_row:]
     return np.array(input_), dates_

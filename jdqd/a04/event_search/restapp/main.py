@@ -5,15 +5,16 @@
 """
 提供向量化事件归并的事件匹配、事件向量化保存、事件删除接口
 """
+import os
+import time
+from sklearn.metrics.pairwise import cosine_similarity
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from queue import Queue
-import threading
 import traceback
 from feedwork.utils import logger
-from jdqd.common.event_emm import data_utils
 from jdqd.common.event_emm.model_utils import TOKENIZER
 from jdqd.a04.event_search.algor.predict import load_model, load_vec, save_vec, delete_vec
+from jdqd.a04.event_search.algor.predict.comm import read_cameo2id
 import jdqd.a04.event_search.config.PredictConfig as pre_config
 
 app = Flask(__name__)
@@ -23,15 +24,12 @@ CORS(app)
 BERT_MODEL = load_model.load_bert_model()
 # 加载匹配模型
 MATCH_MODEL = load_model.load_match_model()
-
-# 匹配用的主队列
-MATCH_QUEUE = Queue(maxsize=5)
-# 事件向量化保存用的主队列
-VEC_QUEUE = Queue(maxsize=5)
-# 事件删除主队列
-VEC_DELETE_QUEUE = Queue(maxsize=5)
-# 向量读取主队列
-READ_QUENE = Queue(maxsize=5)
+# 加载所有的向量
+VEC_DATA = load_vec.load_all_vec()
+if os.path.exists(pre_config.cameo2id_path):
+    CAMEO2ID = read_cameo2id(pre_config.cameo2id_path)
+else:
+    CAMEO2ID = {}
 
 
 def judge(name, data):
@@ -44,46 +42,6 @@ def judge(name, data):
     if not data or data is None:
         logger.error(f"{name} is None!")
         raise ValueError
-
-
-# 持续循环读取向量文件
-def vec_reader():
-    """
-    遍历读取向量文件，持续循环
-    :return: None
-    """
-    while True:
-        logger.info(f"READ_QUENE.get是否为空：{READ_QUENE.empty()}", f"是否已经满了{READ_QUENE.full()}")
-        message, read_sub_queue = READ_QUENE.get()
-        logger.info("READ_QUENE.get完成！")
-        logger.info(f"READ_QUENE.get是否为空：{READ_QUENE.empty()}", f"是否已经满了{READ_QUENE.full()}")
-
-        try:
-            # 如果需要读取向量则开始读取
-            if message:
-                # 加载字典文件
-                cameo2id = data_utils.read_json(pre_config.cameo2id_path)
-                # 获取所有的cameo号
-                cameos = list(cameo2id.keys())
-                # 一次只读取一个cameo对应的所有向量
-                for cameo in cameos:
-                    data = load_vec.load_vec_data(cameo)
-
-                    # 向量内容放入读取子队列中
-                    logger.info(f"read_sub_queue.put是否为空：{read_sub_queue.empty()}, 是否已经满了{read_sub_queue.full()}")
-                    if cameo != cameos[-1]:
-                        read_sub_queue.put((True, data))
-                    else:
-                        read_sub_queue.put((False, data))
-                    logger.info("read_sub_queue.put完成！")
-            else:
-                continue
-
-        except:
-            trace = traceback.format_exc()
-            logger.error(trace)
-
-            continue
 
 
 # 事件相似性匹配
@@ -113,107 +71,46 @@ def event_match():
     if not threshold or threshold is None:
         threshold = 0.5
 
+    try:
+        # 判断短句是否为空
+        judge("short_sentence", short_sentence)
+        # 短句向量化
+        main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
+        # 最终的结果
+        results = []
+        # 判断是否全部遍历
+        if not cameo or cameo is None or cameo == "":
 
-    # 匹配模块子队列
-    logger.info("开始创建match_sub_queue")
-    match_sub_queue = Queue()
-    # 将短句、cameo号、以及阈值传递给匹配模块
-    logger.info(f"MATCH_QUEUE.put是否为空：{MATCH_QUEUE.empty()}，是否已经满了{MATCH_QUEUE.full()}")
-    MATCH_QUEUE.put((short_sentence, cameo, threshold, match_sub_queue))
-    logger.info("MATCH_QUEUE.put完成！")
+            for once in VEC_DATA:
+                # 使用夹角余弦值过滤
+                score = cosine_similarity([main_vec], [VEC_DATA[once]])[0][0]
+                if score >= pre_config.cos_thread:
+                    # 使用相似度模型判定
+                    score = load_model.vec_match(main_vec, VEC_DATA[once], MATCH_MODEL)
+                    if score >= threshold:
+                        results.append({"event_id": once, "score": float(score)})
+        else:
+            # 获取cameo对应的所有事件id
+            event_ids = CAMEO2ID.get(cameo, [])
+            # 获取事件id-向量字典
+            data = {once:VEC_DATA[once] for once in event_ids}
 
-    # 通过匹配模块获取匹配结果
-    logger.info(f"match_sub_queue.get是否为空：{match_sub_queue.empty()}，是否已经满了{match_sub_queue.full()}")
-    message, result = match_sub_queue.get()
-    logger.info("match_sub_queue.get完成！")
-    logger.info(f"match_sub_queue.get是否为空：{match_sub_queue.empty()}，是否已经满了{match_sub_queue.full()}")
+            for once in data:
+                # 使用夹角余弦值过滤
+                score = cosine_similarity([main_vec], [data[once]])[0][0]
+                if score >= pre_config.cos_thread:
+                    # 使用相似度模型判定
+                    score = load_model.vec_match(main_vec, data[once], MATCH_MODEL)
+                    if score >= threshold:
+                        results.append({"event_id": once, "score": float(score)})
 
-
-    if message:
-        return jsonify(status="success", result=result)
-    else:
-        return jsonify(status="failed", result=result)
-
-
-def match():
-    """
-    在相应的cameo中查找最相似的事件
-    :return: None
-    """
-    while True:
-        logger.info(f"MATCH_QUEUE.get是否为空:{MATCH_QUEUE.empty()},是否已满{MATCH_QUEUE.full()}")
-        short_sentence, cameo, threshold, match_sub_queue = MATCH_QUEUE.get()
-        logger.info("MATCH_QUEUE.get完成！")
-        logger.info(f"MATCH_QUEUE.get是否为空:{MATCH_QUEUE.empty()},是否已满{MATCH_QUEUE.full()}")
-
-        try:
-            # 判断短句是否为空
-            judge("short_sentence", short_sentence)
-
-            # 短句向量化
-            logger.info("load_model.generate_vec。。。")
-            main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
-            logger.info("load_model.generate_vec完成！")
-            # 最终的结果
-            results = []
-            # 判断是否全部遍历
-            if not cameo or cameo is None or cameo == "":
-                logger.info("scaning all files...")
-                # 文件读取子队列
-                read_sub_queue = Queue()
-                # 文件读取主队列
-                logger.info(f"READ_QUENE.put是否为空:{READ_QUENE.empty()},是否已满{READ_QUENE.full()}")
-                READ_QUENE.put((True, read_sub_queue))
-                logger.info("READ_QUENE.put完成！")
-
-                # 从向量
-                while True:
-                    logger.info(f"read_sub_queue.get是否为空:{read_sub_queue.empty()},是否已满{read_sub_queue.full()}")
-                    status, data = read_sub_queue.get()
-                    logger.info("read_sub_queue.get完成！")
-                    logger.info(f"read_sub_queue.get是否为空:{read_sub_queue.empty()},是否已满{read_sub_queue.full()}")
-
-                    if status:
-                        for once in data:
-                            score = load_model.vec_match(main_vec, data[once], MATCH_MODEL)
-                            if score >= threshold:
-                                results.append({"event_id": once, "score": float(score)})
-                    else:
-                        for once in data:
-                            score = load_model.vec_match(main_vec, data[once], MATCH_MODEL)
-                            if score >= threshold:
-                                results.append({"event_id": once, "score": float(score)})
-                        break
-                results.sort(key=lambda x: x["score"], reverse=True)
-
-            else:
-                # 加载数据
-                logger.info("scaning identied cameo file!")
-                data = load_vec.load_vec_data(cameo)
-                logger.info("identied cameo file is OK!")
-                # 如果data不为空则执行此处操作，否则就任务数据文件为空，这是第一条数据
-                if data:
-                    for once in data:
-                        score = load_model.vec_match(main_vec, data[once], MATCH_MODEL)
-                        if score >= threshold:
-                            results.append({"event_id": once, "score": float(score)})
-                    # 对输出的结果按照降序排序
-                    results.sort(key=lambda x: x["score"], reverse=True)
-
-            # 将匹配结果返回给接口
-            logger.info(f"match_sub_queue.put是否为空:{match_sub_queue.empty()},是否已满{match_sub_queue.full()}")
-            match_sub_queue.put((True, results))
-            logger.info("match_sub_queue.put完成！")
-
-        except:
-            trace = traceback.format_exc()
-            logger.error(trace)
-
-            logger.info(f"EXCEPT:match_sub_queue.put是否为空:{match_sub_queue.empty()},是否已满{match_sub_queue.full()}")
-            match_sub_queue.put((False, trace))
-            logger.info("EXCEPT:match_sub_queue.put完成！")
-
-            continue
+        # 对输出的结果按照降序排序
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return jsonify(status="success", result=results)
+    except:
+        trace = traceback.format_exc()
+        logger.error(trace)
+        return jsonify(status="failed", result=trace)
 
 
 # 事件向量化保存
@@ -239,45 +136,28 @@ def event_vectorization():
         # 事件id
         event_id = request.form.get("event_id", type=str, default=None)
 
-    # 向量化模块子队列
-    vec_sub_queue = Queue()
-    # 将短句、cameo号、以及事件id传递给向量化模块
-    VEC_QUEUE.put((short_sentence, cameo, event_id, vec_sub_queue))
-    # 获取执行状态
-    status, message = vec_sub_queue.get()
+    try:
+        # 判断短句是否为空
+        judge("short_sentence", short_sentence)
+        # 判断cameo是否为空
+        judge("cameo", cameo)
+        # 判断事件id是否为空
+        judge("event_id", event_id)
+        # 事件短句向量化
+        main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
+        # 向量保存
+        save_vec.save_vec_data(cameo, event_id, main_vec)
+        # 将向量保存到向量字典
+        VEC_DATA[event_id] = main_vec
+        # 将事件id保存到cameo字典
+        event_ids = CAMEO2ID.setdefault(cameo, [])
+        event_ids.append(event_id)
 
-    if status:
-        return jsonify(status="success", message=message)
-    else:
-        return jsonify(status="failed", message=message)
-
-
-def vec_save():
-    """
-    从前端获取事件短句、cameo号、事件id，将事件短句向量化并保存
-    :return: None
-    """
-    while True:
-        # 从接口处获取事件短句、cameo编号、事件id、子队列
-        short_sentence, cameo, event_id, vec_sub_queue = VEC_QUEUE.get()
-        try:
-            # 判断短句是否为空
-            judge("short_sentence", short_sentence)
-            # 判断cameo是否为空
-            judge("cameo", cameo)
-            # 判断事件id是否为空
-            judge("event_id", event_id)
-            # 事件短句向量化
-            main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
-            # 向量保存
-            save_vec.save_vec_data(cameo, event_id, main_vec)
-            # 返回状态值
-            vec_sub_queue.put((True, ""))
-        except:
-            trace = traceback.format_exc()
-            logger.error(trace)
-            vec_sub_queue.put((False, trace))
-            continue
+        return jsonify(status="success", message="success")
+    except:
+        trace = traceback.format_exc()
+        logger.error(trace)
+        return jsonify(status="failed", message=trace)
 
 
 # 事件向量删除
@@ -295,63 +175,85 @@ def vev_delete():
         # 事件id
         event_id = request.form.get("event_id", type=str, default=None)
 
-    # 向量化模块子队列
-    vec_delete_sub_queue = Queue()
-    # 事件id传递给向量删除模块
-    VEC_DELETE_QUEUE.put((event_id, vec_delete_sub_queue))
-    # 获取执行状态
-    status, message = vec_delete_sub_queue.get()
+    try:
+        # 判断短句是否为空
+        judge("event_id", event_id)
+        # 删除事件id以及对应的向量
+        status, cameo = delete_vec.execute_delete(event_id)
+        # 返回值
+        if status:
+            CAMEO2ID[cameo].remove(event_id)
+            return jsonify(status="success", message="success")
+        else:
+            return jsonify(status="failed", message="Event_id not in saved file!")
+    except:
+        trace = traceback.format_exc()
+        logger.error(trace)
+        return jsonify(status="failed", message=trace)
 
-    if status:
-        return jsonify(status="success", message=message)
+
+@app.route("/search", methods=["GET", "POST"])
+def event_search():
+    """
+    供前端事件检索使用，返回top_n
+    :return: results(list)-->[{"event_id":"", "score":}]
+    """
+    if request.method == "GET":
+        # 事件短句，由主语、谓语、否定词、宾语组成
+        short_sentence = request.args.get("short_sentence", type=str, default=None)
+        # 相似度阈值
+        threshold = request.args.get("threshold", type=float, default=0.5)
+        # top_n
+        top_n = request.args.get("top_n", type=int, default=50)
     else:
-        return jsonify(status="failed", message=message)
+        # 事件短句，由主语、谓语、否定词、宾语组成
+        short_sentence = request.form.get("short_sentence", type=str, default=None)
+        # 相似度阈值
+        threshold = request.form.get("threshold", type=float, default=0.5)
+        # top_n
+        top_n = request.args.get("top_n", type=int, default=50)
 
+    try:
+        # 必须是整型
+        if not top_n or top_n == None or type(top_n) != int:
+            logger.error(f"top_n 类型错误！")
+            raise TypeError
+        # 判断短句是否正常
+        judge("short_sentence", short_sentence)
 
-def vec_delete_execute():
-    """
-    通过队列接收待删除的事件id,遍历cameo_id列表，将id以及对应的事件向量删除。
-    :return: None
-    """
-    while True:
-        event_id, vec_delete_sub_queue = VEC_DELETE_QUEUE.get()
+        t1 = time.time()
+        # 使用bert向量化
+        main_vec = load_model.generate_vec(TOKENIZER, BERT_MODEL, short_sentence)
+        t2 = time.time()
+        logger.info(f"向量化耗时：{t2 - t1}s")
 
-        try:
-            # 判断短句是否为空
-            judge("event_id", event_id)
-            logger.info("Begin to delete vector...")
-            # 删除事件id以及对应的向量
-            state = delete_vec.execute_delete(event_id)
+        if VEC_DATA:
+            # 使用余弦值方法计算相似度
+            all_vecs = list(VEC_DATA.values())
+            scores = cosine_similarity(all_vecs, [main_vec]).reshape(-1)
+            results = [{"event_id": once, "score": float(score)} for once, score in zip(VEC_DATA, scores) if score>=threshold]
+        else:
+            results = []
 
-            # 如果state为1则删除成功,0则没有找到对应的event_id
-            if state:
-                vec_delete_sub_queue.put((True, "success"))
-            else:
-                vec_delete_sub_queue.put((False, "Event_id not in saved file!"))
+        t3 = time.time()
+        logger.info(f"计算相似度耗时：{t3 - t2}s")
 
-        except:
-            trace = traceback.format_exc()
-            logger.error(trace)
-            vec_delete_sub_queue.put((False, trace))
-            continue
+        # 对输出的结果按照降序排序
+        results.sort(key=lambda x: x["score"], reverse=True)
+        # 取top_n
+        if len(results) > top_n:
+            results = results[:top_n]
+        t4 = time.time()
+        logger.info(f"排序耗时：{t4 - t3}s")
+
+        # 返回匹配结果
+        return jsonify(status="success", result=results)
+    except:
+        trace = traceback.format_exc()
+        logger.error(trace)
+        return jsonify(status="failed", result=trace)
 
 
 if __name__ == "__main__":
 
-    # 向量遍历线程
-    t0 = threading.Thread(target=vec_reader)
-    t0.daemon = True
-    t0.start()
-    # 向量匹配线程
-    t1 = threading.Thread(target=match)
-    t1.daemon = True
-    t1.start()
-    # 向量保存线程
-    t2 = threading.Thread(target=vec_save)
-    t2.daemon = True
-    t2.start()
-    # 向量删除线程
-    t3 = threading.Thread(target=vec_delete_execute)
-    t3.daemon = True
-    t3.start()
     app.run(host="0.0.0.0", port="38083", threaded=True)

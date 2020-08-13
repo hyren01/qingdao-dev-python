@@ -70,3 +70,4 @@ def rule23(sentence, keyword):
 
 rules = [rule10, rule11, rule12, rule13, rule20, rule21, rule22, rule23]
 rules_keyword_pos = {r.__name__: None for r in rules}
+rw_type = 'condition'

@@ -135,7 +135,9 @@ def get_extract_model():
                 [trigger_start_out, trigger_end_out, object_start_out, object_end_out, subject_start_out, subject_end_out,
                  loc_start_out, loc_end_out, time_start_out, time_end_out, negative_start_out, negative_end_out])
             # 加载事件抽取模型参数
+            logger.info("开始加载事件抽取模型参数。。。")
             train_model.load_weights(pre_config.event_extract_model_path)
+            logger.info("事件抽取模型参数加载完成！")
 
     return trigger_model, object_model, subject_model, loc_model, time_model, negative_model
 
@@ -172,7 +174,9 @@ def get_state_model():
             state_model = Model(bert_model.model.inputs + [trigger_start_index, trigger_end_index], state_out_put)
 
             # 加载模型
+            logger.info("开始加载事件状态模型参数。。。")
             state_model.load_weights(pre_config.event_state_model_path)
+            logger.info("事件状态模型参数加载完成！")
 
     return state_model
 
@@ -198,7 +202,9 @@ def get_cameo_model():
             # cameo模型
             cameo_model = Model(bert_model.model.inputs, cameo_out_put)
             # 加载模型参数
+            logger.info("开始加载事件cameo模型参数。。。")
             cameo_model.load_weights(pre_config.event_cameo_model_path)
+            logger.info("事件cameo模型参数加载完成！")
 
     return cameo_model
 

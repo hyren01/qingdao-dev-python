@@ -10,7 +10,7 @@
     
             "content":"",
             
-            "sample_type:""(也可以不用传，底层默认abstract)[parts abstract all]
+            "sample_type:""(也可以不用传，底层默认all)[parts abstract all]
             
             }
     

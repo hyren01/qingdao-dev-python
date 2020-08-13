@@ -48,27 +48,26 @@ def infer():
     if request.method == "POST":
         title = request.form.get("title", type=str, default=None)
         content = request.form.get("content", type=str, default=None)
-        sample_type = request.form.get("sample_type", type=str, default='abstract')
+        sample_type = request.form.get("sample_type", type=str, default='all')
     else:
         title = request.args.get("title", type=str, default=None)
         content = request.args.get("content", type=str, default=None)
-        sample_type = request.args.get("sample_type", type=str, default='abstract')
+        sample_type = request.args.get("sample_type", type=str, default='all')
+
 
     if not content or content is None:
         return error_resp('文章内容为空')
-    elif not title or title is None:
-        return error_resp('文章标题为空')
 
     # 创建子队列，从预测模块获取处理信息
     sub_queue = Queue()
     # 使用主队列将请求内容以及子队列传入预测模块
     logger.info("接收到前端请求开始进行事件识别。。。")
-    main_queue.put((title, content, sample_type, sub_queue))
+    main_queue.put((content, sample_type, sub_queue))
     # 使用子队列从预测模块获取请求信息以及预测数据
     success, pred = sub_queue.get()
 
     if success:
-        return success_resp([{'title_pred': pred[0]}, {'content_pred': pred[1]}])
+        return success_resp([{'title_pred': []}, {'content_pred': pred}])
     else:
         return error_resp(pred)
 
@@ -94,12 +93,12 @@ def worker():
 
         # 获取数据和子队列
         logger.info("从主队列获取信息。。。")
-        title, content, sample_type, sub_queue = main_queue.get()
+        content, sample_type, sub_queue = main_queue.get()
         try:
             logger.info("开始进行事件识别。。。")
-            title_pred, content_pred = get_predict_result(model, event_list, title, content, sample_type)
+            content_pred = get_predict_result(model, event_list, content, sample_type)
 
-            sub_queue.put((True, [title_pred, content_pred]))
+            sub_queue.put((True, content_pred))
         except:
             # 通过子队列发送异常信息
             trace = traceback.format_exc()

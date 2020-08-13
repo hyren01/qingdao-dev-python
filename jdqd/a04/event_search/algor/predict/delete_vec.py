@@ -27,7 +27,6 @@ def execute_delete(event_id: str):
 
     # 判断事件是否在向量库中，如果存在则设置为1，并读取对应的向量并将其删除
     status = 0
-    logger.info("Begin to scan cameo2id dict...")
     for cameo in list(cameo2id.keys()):
 
         if event_id in cameo2id[cameo]:

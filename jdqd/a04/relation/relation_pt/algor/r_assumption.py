@@ -3,10 +3,15 @@ from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
 
 def gen_keywords():
-    if_words = ['如若', '若', '如果', '假如', '假若', '假使', '假设', '设使', '倘使', '一旦', '要是', '既然']
+    if_words = ['如若', '若', '如果', '假如', '假若', '假使', '假设', '设使', '倘使', '一旦', '要是', '既然', '倘若', '假定']
     keywords_if = [[w] for w in if_words]
     then_words = ['那么', '则', '就将', '便', '将', '就']
     keyword_pairs = list(product(if_words, then_words))
+    if_words_add = ['即使', '就算', '哪怕', '纵然', '纵使', '即便']
+    then_words_add = ['也', '还是']
+    keyword_pairs_add = list(product(if_words_add, then_words_add))
+    keyword_pairs += keyword_pairs_add
+
     keyword_rules = {'rule10': keyword_pairs,
                      'rule11': keyword_pairs,
                      'rule20': keyword_pairs,
@@ -67,3 +72,4 @@ rules_keyword_pos = {'rule10': None,
                      'rule31': -2,
                      'rule40': -1,
                      'rule41': -1}
+rw_type = 'assumption'

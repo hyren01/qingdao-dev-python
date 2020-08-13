@@ -193,6 +193,7 @@ def get_event_rel_by_id():
     """
     try:
         event_id = request.form.get('event_id')
+        event_sentence = request.form.get('event_sentence')
         event_tag = request.form.get('event_tag')
         if event_id is None:
             return {"status": "error", "msg": "event_id参数为None"}
@@ -200,7 +201,7 @@ def get_event_rel_by_id():
         return {"status": "error"}
     else:
         graph_db = get_gdb()
-        result_link, result_data = graph_service.get_event_rel_by_id(graph_db, event_id, event_tag)
+        result_link, result_data = graph_service.get_event_rel_by_id(graph_db, event_id, event_tag, event_sentence)
 
         return Response(json.dumps({"status": "success", "result_link": result_link, "result_data": result_data}),
                         mimetype="application/json")
@@ -251,18 +252,16 @@ def clear_data_with_web():
     返回数据，如：{"status":"success", "content":""}
     """
     # 1、程序验证输入的原始语种字符串是否为空，文章id是否为空；
-    try:
-        pass
-        # content = request.form.get('content')
-        # article_id = request.form.get('article_id')
-        # if article_id is None:
-        #     return {"status": "error", "msg": "article_id参数为None"}
-    except KeyError:
-        return {"status": "error"}
-    else:
-        clear_web_data()
+    # try:
+    #     content = request.form.get('content')
+    #     if content is None:
+    #         return {"status": "error", "msg": "content参数为None"}
+    # except KeyError:
+    #     return {"status": "error"}
+    # else:
+    content = clear_web_data()
 
-        return {"status": "success"}
+    return {"status": "success", "content": content}
 
 
 @app.route("/get_event_rel_and_article", methods=['POST'])

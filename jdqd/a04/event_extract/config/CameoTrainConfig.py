@@ -7,6 +7,7 @@
 
 """
 import feedwork.AppinfoConf as appconf
+from jdqd.common.event_emm.model_utils import generate_trained_model_path
 from feedwork.utils.FileHelper import cat_path
 
 
@@ -14,7 +15,9 @@ from feedwork.utils.FileHelper import cat_path
 trained_model_dir = "event_cameo_trained_model"
 trained_model_dir = cat_path(appconf.ALGOR_MODULE_ROOT, trained_model_dir)
 # 训练后模型名称
-trained_model_name = "type_model.h5"
+trained_model_name = "cameo_model.h5"
+# 训练后模型保存路径
+trained_model_path = generate_trained_model_path(trained_model_dir, trained_model_name)
 # 训练集数据保存路径
 train_data_path = "event_extract/data/event_cameo_data/train_data.json"
 train_data_path = cat_path(appconf.ALGOR_PRETRAIN_ROOT, train_data_path)

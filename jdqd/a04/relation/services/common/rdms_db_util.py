@@ -1,5 +1,6 @@
 import json
 from feedwork.database.database_wrapper import DatabaseWrapper
+from feedwork.database.database_wrapper import QueryResultType
 
 
 def insert_event_relations(keyword, left, right, event_pairs, rst, code, sentence_id):
@@ -28,17 +29,15 @@ def insert_event_relations(keyword, left, right, event_pairs, rst, code, sentenc
     finally:
         db.close()
 
-# def update(article_id):
-#     db = DatabaseWrapper()
-#     finish_date = time.strftime("%Y-%m-%d", time.localtime())
-#     finish_time = time.strftime("%H:%M:%S", time.localtime())
-#     try:
-#         db.execute(f"update t_article_msg_zh set is_relation='1',finish_date=%s,finish_time=%s "
-#                    f"where article_id=%s",
-#                    (finish_date, finish_time, article_id))
-#         db.commit()
-#     except Exception as ex:
-#         db.rollback()
-#         raise RuntimeError(f"{article_id},ex.msg={ex}")
-#     finally:
-#         db.close()
+
+def get_event_info(event_id):
+    db = DatabaseWrapper()
+    try:
+        event_info = db.query(f"select shorten_sentence,verb,triggerloc_index from ebm_event_info "
+                              f"where event_id='{event_id}'")
+        return event_info
+    except Exception as ex:
+        db.rollback()
+        raise RuntimeError(f"{event_id},ex.msg={ex}")
+    finally:
+        db.close()

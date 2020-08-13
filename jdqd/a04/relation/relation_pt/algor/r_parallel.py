@@ -78,3 +78,4 @@ rules_keyword_pos = {'rule101': None,
                      'rule203': None,
                      'rule204': None
                      }
+rw_type = 'parallel'

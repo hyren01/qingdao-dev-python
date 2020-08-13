@@ -15,7 +15,6 @@ from jdqd.a03.event_pred.enum.data_status import DataStatus
 from feedwork.database.database_wrapper import DatabaseWrapper
 from feedwork.database.enum.query_result_type import QueryResultType
 from feedwork.utils.DateHelper import sys_date, sys_time
-from jdqd.a03.event_pred.enum.model_status import ModelStatus
 
 # 读取配置文件
 __cfg_data = appconf.appinfo["a03"]['data_source']
@@ -51,7 +50,8 @@ def model_train_finish(model_id, status):
     __modify(sql, (status, sys_date(sys_date_formatter), sys_time(sys_time_formatter), model_id))
 
 
-def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set, model_dir):
+def model_train_done_rnn(model_id, lag_dates, pcas, file_path_list, sub_model_names, outputs_list, events_set,
+                         model_dir):
     """
     更新t_event_model_file、t_event_model_detail、t_event_model_tran表的数据。
 
@@ -71,28 +71,97 @@ def model_train_done(model_id, lag_dates, pcas, file_path_list, sub_model_names,
 
         # 子模型信息入库
         detail_ids = []
-        sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id, lag_date, pca) values " \
-              "(%s, %s, %s, %s, %s, %s)"
+        sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id, lag_date, pca, create_date, " \
+              "create_time) values (%s, %s, %s, %s, %s, %s, %s, %s)"
         params = []
         for sub_model_name, lag_date, pca in zip(sub_model_names, lag_dates, pcas):
             detail_id = UuidHelper.guid()
             detail_ids.append(detail_id)
-            params.append((detail_id, sub_model_name, DataStatus.SUCCESS.value, model_id, int(lag_date), int(pca)))
+            params.append((detail_id, sub_model_name, DataStatus.SUCCESS.value, model_id, int(lag_date), int(pca),
+                           sys_date(sys_date_formatter), sys_time(sys_time_formatter)))
         db.executemany(sql, params)
 
         # 分事件模型信息入库
-        sql = "INSERT INTO t_event_model_tran(tran_id, event_name, num, detail_id, status) values (%s, %s, %s, %s, %s)"
+        sql = "INSERT INTO t_event_model_tran(tran_id, event_name, num, detail_id, status, create_date, create_time) " \
+              "values (%s, %s, %s, %s, %s, %s, %s)"
         params = []
         for detail_id, outputs in zip(detail_ids, outputs_list):
             events_num = pp.get_event_num(outputs, events_set)
             for e in events_set:
                 tran_id = UuidHelper.guid()
                 event_num = events_num[e]
-                param = (tran_id, e, event_num, detail_id, DataStatus.SUCCESS.value)
+                param = (tran_id, e, event_num, detail_id, DataStatus.SUCCESS.value, sys_date(sys_date_formatter),
+                         sys_time(sys_time_formatter))
                 params.append(param)
         db.executemany(sql, params)
 
+        sql = "UPDATE t_event_model SET model_dir = %s WHERE model_id = %s"
+        db.execute(sql, (model_dir, model_id))
+
+        db.commit()
+        return detail_ids
+    except Exception as e:
+        db.rollback()
+        raise RuntimeError(e)
+    finally:
+        db.close()
+
+
+def model_train_done_cnn(model_id, kernel_size_array, pool_size_array, lag_date_array, file_path_array,
+                         sub_model_name_array, output_array, event_set_array, model_dir):
+    """
+    更新t_event_model_file、t_event_model_detail、t_event_model_tran表的数据。
+
+    :param model_id: string. 模型编号
+    :param kernel_size_array: array. 卷积核列表
+    :param pool_size_array: array. 过滤器列表
+    :param lag_date_array: array. 滞后期列表
+    :param file_path_array: array. 模型文件地址列表
+    :param sub_model_name_array: array. 模型文件名列表
+    :param output_array: array.事件样本列表（事件表数据）
+    :param event_set_array: array.事件类别列表
+    :param model_dir: str.模型存放地址
+    :return array, 子模型编号列表
+    """
+    db = DatabaseWrapper(dbname=event_dbname)
+    try:
+        db.begin_transaction()
+
+        sql = "INSERT INTO t_event_model_file(file_id, file_url, model_id) VALUES (%s, %s, %s) "
+        params = []
+        for model_fp in file_path_array:
+            param = (UuidHelper.guid(), model_fp, model_id)
+            params.append(param)
+        db.executemany(sql, params)
+
+        # 子模型信息入库
+        detail_ids = []
+        sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id, lag_date, kernel_size, " \
+              "pool_size, create_date, create_time) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        params = []
+        for sub_model_name, lag_date, kernel_size, pool_size in zip(sub_model_name_array, lag_date_array,
+                                                                    kernel_size_array, pool_size_array):
+            detail_id = UuidHelper.guid()
+            detail_ids.append(detail_id)
+            params.append((detail_id, sub_model_name, DataStatus.SUCCESS.value, model_id, int(lag_date),
+                           int(kernel_size), int(pool_size), sys_date(sys_date_formatter),
+                           sys_time(sys_time_formatter)))
+        db.executemany(sql, params)
+
         # 分事件模型信息入库
+        sql = "INSERT INTO t_event_model_tran(tran_id, event_name, num, detail_id, status, create_date, create_time) " \
+              "values (%s, %s, %s, %s, %s, %s, %s)"
+        params = []
+        for detail_id, outputs in zip(detail_ids, output_array):
+            events_num = pp.get_event_num(outputs, event_set_array)
+            for event in event_set_array:
+                tran_id = UuidHelper.guid()
+                event_num = events_num[event]
+                param = (tran_id, event, event_num, detail_id, DataStatus.SUCCESS.value, sys_date(sys_date_formatter),
+                         sys_time(sys_time_formatter))
+                params.append(param)
+        db.executemany(sql, params)
+
         sql = "UPDATE t_event_model SET model_dir = %s WHERE model_id = %s"
         db.execute(sql, (model_dir, model_id))
 
@@ -115,15 +184,15 @@ def model_eval_done(top_scores, events_num):
     db = DatabaseWrapper(dbname=event_dbname)
     try:
         sql = "insert into t_event_model_tot(tot_id, num, false_rate, recall_rate, false_alarm_rate, " \
-              "tier_precision, tier_recall, bleu, score, status, detail_id) values " \
-              "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+              "tier_precision, tier_recall, bleu, score, status, detail_id, create_date, create_time) values " \
+              "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         params = []
         for score, bleu_summary, tier_precision_summary, tier_recall_summary, fr_summary, rc_summary, \
                 fa_summary, detail_id in top_scores:
             num_events = np.sum([v for k, v in events_num.items() if str(k) != '0'])
             param = (UuidHelper.guid(), str(num_events), str(fr_summary), str(rc_summary), str(fa_summary),
                      str(tier_precision_summary), str(tier_recall_summary), str(bleu_summary), str(score),
-                     DataStatus.SUCCESS.value, detail_id)
+                     DataStatus.SUCCESS.value, detail_id, sys_date(sys_date_formatter), sys_time(sys_time_formatter))
             params.append(param)
         db.executemany(sql, params)
         db.commit()
@@ -144,38 +213,18 @@ def insert_into_model_detail(sub_model_names, model_id):
         array，detail_id
     """
     detail_ids = []
-    sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id) values (%s, %s, %s, %s)"
+    sql = "INSERT INTO t_event_model_detail(detail_id, model_name, status, model_id, create_date, create_time) " \
+          "values (%s, %s, %s, %s, %s, %s)"
     params = []
     for sub_model_name in sub_model_names:
         detail_id = UuidHelper.guid()
         detail_ids.append(detail_id)
-        params.append((detail_id, sub_model_name, DataStatus.SUCCESS.value, model_id))
+        params.append((detail_id, sub_model_name, DataStatus.SUCCESS.value, model_id, sys_date(sys_date_formatter),
+                       sys_time(sys_time_formatter)))
 
     __modify_many(sql, params)
 
     return detail_ids
-
-
-def insert_into_model_train(detail_ids, outputs_list, events_set, status):
-    """
-    记录模型训练信息
-    Args:
-      detail_ids: array.detail_id
-      outputs_list: array.输出序列
-      events_set: array.去重后的事件类别
-      status: string.模型训练状态
-    """
-    sql = "INSERT INTO t_event_model_tran(tran_id, event_name, num, detail_id, status) values (%s, %s, %s, %s, %s)"
-    params = []
-    for detail_id, outputs in zip(detail_ids, outputs_list):
-        events_num = pp.get_event_num(outputs, events_set)
-        for e in events_set:
-            tran_id = UuidHelper.guid()
-            event_num = events_num[e]
-            param = (tran_id, e, event_num, detail_id, status)
-            params.append(param)
-
-    __modify_many(sql, params)
 
 
 def insert_model_test(event, event_num, false_rate, recall_rate, false_alarm_rate, tier_precision, tier_recall, bleu,
@@ -195,33 +244,12 @@ def insert_model_test(event, event_num, false_rate, recall_rate, false_alarm_rat
     """
     test_id = UuidHelper.guid()
     sql = "insert into t_event_model_test(test_id, event_name, num, false_rate, recall_rate, false_alarm_rate, " \
-          "tier_precision, tier_recall, bleu, status, detail_id) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+          "tier_precision, tier_recall, bleu, status, detail_id, create_date, create_time) " \
+          "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     param = (test_id, event, event_num, false_rate, recall_rate, false_alarm_rate, tier_precision, tier_recall, bleu,
-             DataStatus.SUCCESS.value, detail_id)
+             DataStatus.SUCCESS.value, detail_id, sys_date(sys_date_formatter), sys_time(sys_time_formatter))
 
     __modify(sql, param, '插入子模型评估结果失败')
-
-
-def insert_model_tot(top_scores, events_num):
-    """
-    将模型评估结果插入数据库
-    :param top_scores:  评估分数
-    :param events_num:  事件类别数
-    """
-    sql = "insert into t_event_model_tot(tot_id, num, false_rate, recall_rate, false_alarm_rate, " \
-          "tier_precision, tier_recall, bleu, score, status, detail_id) values " \
-          "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-    params = []
-    for score, bleu_summary, tier_precision_summary, tier_recall_summary, fr_summary, rc_summary, fa_summary, \
-            detail_id in top_scores:
-        num_events = np.sum([v for k, v in events_num.items() if str(k) != '0'])
-        tot_id = UuidHelper.guid()
-        param = (tot_id, str(num_events), str(fr_summary), str(rc_summary), str(fa_summary),
-                 str(tier_precision_summary), str(tier_recall_summary), str(bleu_summary), str(score),
-                 DataStatus.SUCCESS.value, detail_id)
-        params.append(param)
-
-    __modify_many(sql, params, '存入top模型出错')
 
 
 def query_sub_models_by_model_id(model_id):
@@ -233,11 +261,10 @@ def query_sub_models_by_model_id(model_id):
 
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t2.days, t2.model_dir " \
-              "FROM t_event_model_detail t1 " \
-              "JOIN t_event_model t2 ON t1.model_id = t2.model_id " \
-              "JOIN t_event_model_tot t3 ON t1.detail_id=t3.detail_id "\
-              "WHERE t1.model_id = %s order by t3.score desc limit 10 "
+        sql = "SELECT t1.model_name, t1.detail_id, t1.lag_date, t1.pca, t1.kernel_size, t1.pool_size, t2.days, " \
+              "t2.model_dir FROM t_event_model_detail t1 JOIN t_event_model t2 ON t1.model_id = t2.model_id " \
+              "JOIN t_event_model_tot t3 ON t1.detail_id = t3.detail_id " \
+              "WHERE t1.model_id = %s ORDER BY t3.score DESC LIMIT 10"
         event_predict = db.query(sql, (model_id,), result_type=QueryResultType.BEAN, wild_class=EventPredict)
         if len(event_predict) < 1:
             raise RuntimeError(f"Query t_event_model_detail error, the {model_id} cannot get multi-row")
@@ -309,8 +336,8 @@ def insert_pred_result(probs, probs_all_days, dates, dates_pred_all, dates_data,
         for p, pa, ds, da, did, dd in zip(probs, probs_all_days, dates, dates_pred_all, detail_ids, dates_data):
             for i, e in enumerate(events_set):
                 for j, d in enumerate(ds):
-                    param = (UuidHelper.guid(), str(e), f'{p[j][i]:.4f}', str(d), DataStatus.SUCCESS.value, did, task_id,
-                             sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
+                    param = (UuidHelper.guid(), str(e), f'{p[j][i]:.4f}', str(d), DataStatus.SUCCESS.value, did,
+                             task_id, sys_date(sys_date_formatter), sys_time(sys_time_formatter), str(dd[j]))
                     sql_task_rs_params.append(param)
                 for j, d in enumerate(da):
                     pd = pa[j]
@@ -390,7 +417,7 @@ def query_event_table_2pandas(table_name, event_col, date_col):
         sql = f"SELECT {event_col}, CAST({date_col} AS VARCHAR) AS {date_col} FROM {table_name} " \
             f"WHERE qssj IS NOT NULL AND ({event_col} IS NOT NULL AND {event_col} <> '') AND " \
             f"({date_col} IS NOT NULL AND CAST({date_col} AS VARCHAR) <> '') AND " \
-              f"LENGTH(CAST({date_col} AS VARCHAR)) > 8 ORDER BY {date_col} ASC"
+            f"LENGTH(CAST({date_col} AS VARCHAR)) > 8 ORDER BY {date_col} ASC"
         result = db.query(sql, (), result_type=QueryResultType.PANDAS)
         return result
     except Exception as e:
@@ -454,8 +481,8 @@ def query_teventtask_by_id(task_id):
     """
     db = DatabaseWrapper(dbname=event_dbname)
     try:
-        sql = "SELECT t2.event_type, t2.model_dir, t1.* FROM t_event_task t1 JOIN " \
-              "t_event_model t2 ON t1.model_id = t2.model_id WHERE t1.task_id = %s"
+        sql = "SELECT t2.event_type, t2.model_type, t2.model_dir, t2.event, t1.* FROM t_event_task t1 " \
+              "JOIN t_event_model t2 ON t1.model_id = t2.model_id WHERE t1.task_id = %s"
         t_event_task = db.query(sql, (task_id,), result_type=QueryResultType.BEAN, wild_class=EventTask)
         if len(t_event_task) != 1:
             raise RuntimeError(f"Query t_event_task error, the {task_id} cannot get only one row")

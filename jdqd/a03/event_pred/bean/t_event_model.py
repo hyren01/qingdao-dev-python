@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """
+实体类，对应数据库中的t_event_model表。
 @Author: zhang xin
 @Time: 2020/6/16 10:38
 desc:
@@ -31,6 +32,15 @@ class EventModel(object):
         self._event_type = None
         self._tran_finish_date = ''
         self._tran_finish_time = ''
+        self._kernel_size_min = None
+        self._kernel_size_max = None
+        self._kernel_size_step = None
+        self._pool_size_min = None
+        self._pool_size_max = None
+        self._pool_size_step = None
+        self._model_type = ''   # 模型类型，RNN、CNN
+        self._event = ''
+        self._model_dir = ''
 
     @property
     def model_id(self):
@@ -207,3 +217,75 @@ class EventModel(object):
     @tran_finish_time.setter
     def tran_finish_time(self, tran_finish_time):
         self._tran_finish_time = tran_finish_time
+
+    @property
+    def kernel_size_min(self):
+        return self._kernel_size_min
+
+    @kernel_size_min.setter
+    def kernel_size_min(self, kernel_size_min):
+        self._kernel_size_min = kernel_size_min
+
+    @property
+    def kernel_size_max(self):
+        return self._kernel_size_max
+
+    @kernel_size_max.setter
+    def kernel_size_max(self, kernel_size_max):
+        self._kernel_size_max = kernel_size_max
+
+    @property
+    def kernel_size_step(self):
+        return self._kernel_size_step
+
+    @kernel_size_step.setter
+    def kernel_size_step(self, kernel_size_step):
+        self._kernel_size_step = kernel_size_step
+
+    @property
+    def pool_size_min(self):
+        return self._pool_size_min
+
+    @pool_size_min.setter
+    def pool_size_min(self, pool_size_min):
+        self._pool_size_min = pool_size_min
+
+    @property
+    def pool_size_max(self):
+        return self._pool_size_max
+
+    @pool_size_max.setter
+    def pool_size_max(self, pool_size_max):
+        self._pool_size_max = pool_size_max
+
+    @property
+    def pool_size_step(self):
+        return self._pool_size_step
+
+    @pool_size_step.setter
+    def pool_size_step(self, pool_size_step):
+        self._pool_size_step = pool_size_step
+
+    @property
+    def model_type(self):
+        return self._model_type
+
+    @model_type.setter
+    def model_type(self, model_type):
+        self._model_type = model_type
+
+    @property
+    def event(self):
+        return self._event
+
+    @event.setter
+    def event(self, event):
+        self._event = event
+
+    @property
+    def model_dir(self):
+        return self._model_dir
+
+    @model_dir.setter
+    def model_dir(self, model_dir):
+        self._model_dir = model_dir

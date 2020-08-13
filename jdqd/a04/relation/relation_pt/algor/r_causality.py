@@ -67,6 +67,8 @@ def gen_keywords():
                      'rule42': keyword_yys,
                      'rule50': keyword_yw,
                      'rule51': keyword_yw,
+                     'rule52': keyword_yw,
+                     'rule53': keyword_yw,
                      'rule60': keywords_sys,
                      'rule70': keyword_dz,
                      'rule80': keywords_syy, }
@@ -167,6 +169,16 @@ def rule51(sentence, keyword):
     # pos: -2
     return pattern.rule_scskscs(sentence, keyword)
 
+def rule52(sentence, keyword):
+    # 匹配模式: ..., 因为...
+    # pos: -1
+    return pattern.rule_sckcs(sentence, keyword, comma2=False, reverse=True)
+
+
+def rule53(sentence, keyword):
+    # 匹配模式: ...因为...
+    # pos: None
+    return pattern.rule_sckcs(sentence, keyword, comma1=False, comma2=False, reverse=True)
 
 def rule60(sentence, keyword):
     # 模式: ...是由...所引起
@@ -184,7 +196,7 @@ def rule80(sentence, keyword):
 
 
 rules = [rule10, rule11, rule12, rule13, rule14, rule20, rule21, rule30, rule31, rule400, rule401,
-         rule402, rule40, rule42, rule50, rule51, rule60, rule70, rule80]
+         rule402, rule40, rule42, rule50, rule51, rule52, rule53, rule60, rule70, rule80]
 
 rules_keyword_pos = {'rule10': None,
                      'rule11': None,
@@ -203,10 +215,14 @@ rules_keyword_pos = {'rule10': None,
                      'rule42': None,
                      'rule50': 0,
                      'rule51': -2,
+                     'rule52': -1,
+                     'rule53': None,
                      'rule60': None,
                      'rule70': None,
                      'rule80': None,
                      }
+
+rw_type = 'causality'
 
 # TODO '王生分析，朝鲜向来不屈服于外界的制裁压力，而且以往的制裁措施对朝鲜本身的影响也十分有限，“朝鲜还是会根据自己的步子进行卫星发射，现在需要判断的是金正恩何时访华，有可能会在明年中国"两会"之后，这不仅是因为到时中国领导人完成了政府和党两个层面的新老交接，也是因为届时美国奥巴马政府和韩国新总统的对朝政策都会明朗起来，目前金正恩主要还是在考虑如何巩固领导地位。”'
 # TODO “朝鲜所有行动都是基于国家生存而采取的自卫措施，并不是为了威胁别人。”

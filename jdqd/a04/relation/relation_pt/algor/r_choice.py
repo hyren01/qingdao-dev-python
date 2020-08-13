@@ -1,10 +1,12 @@
 from jdqd.a04.relation.relation_pt.algor import pattern
+from itertools import product
 
 choice_words1 = ['要是', '与其']
 choice_words2 = ['还不如', '倒不如', '不如']
+keywords1 = list(product(choice_words1, choice_words2))
 
-word_pairs = [['不是', '就是'], ['宁可', '也不'], ['宁愿', '也不'],
-              ['不是', '就是'], ['不是', '即是'], ['或者', '或者']]
+word_pairs = [['不是', '就是'], ['宁可', '也不'], ['宁愿', '也不'], ['要么', '要么'], ['不是', '即是'], ['或者', '或者']]
+word_pairs += keywords1
 
 
 def rule101(sentence, keyword):
@@ -45,4 +47,6 @@ def rule302(sentence, keyword):
 rules = [rule101, rule102, rule103, rule104, rule105, rule301, rule302]
 
 keyword_rules = {k.__name__: word_pairs for k in rules}
+
+rw_type = 'choice'
 

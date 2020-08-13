@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """
+实体类，对应数据库中的t_event_task表。
 @Author: zhang xin
 @Time: 2020/6/16 10:38
 desc:
@@ -26,6 +27,8 @@ class EventTask(object):
 
         self._event_type = ''
         self._model_dir = ''
+        self._model_type = ''
+        self._event = ''
 
     @property
     def task_id(self):
@@ -154,3 +157,19 @@ class EventTask(object):
     @model_dir.setter
     def model_dir(self, model_dir):
         self._model_dir = model_dir
+
+    @property
+    def model_type(self):
+        return self._model_type
+
+    @model_type.setter
+    def model_type(self, model_type):
+        self._model_type = model_type
+
+    @property
+    def event(self):
+        return self._event
+
+    @event.setter
+    def event(self, event):
+        self._event = event

@@ -10,7 +10,7 @@ from bert4keras.models import build_transformer_model
 from keras.layers import Lambda, Dense
 from keras.models import Model
 from jdqd.common.event_emm.model_utils import TOKENIZER
-from jdqd.common.event_emm.data_utils import data_process, get_sentences, file_reader
+from jdqd.common.event_emm.data_utils import data_process, file_reader, get_sentences
 from jdqd.a01.event_match.algor.common.utils import DataGenerator, supplement
 from jdqd.a01.event_match.algor.predict.get_abstract import get_abstract
 from feedwork.utils import logger
@@ -35,7 +35,6 @@ def load_match_model():
                    activation='softmax')(t)
 
     model = Model(bert_model.model.inputs, output)
-    model.summary()
 
     logger.info("开始加载匹配模型。。。")
     model.load_weights(pre_config.match_model_path)
@@ -47,7 +46,7 @@ def load_match_model():
 def generate_samples(event_list: list, sentences: list):
     """
     传入事件列表和语句列表，生成匹配对进行预测
-    :param event_list: (list)事件列表
+    :param event_list: (list)事件列表 [(event_id, event), ]
     :param sentences: (list)待匹配的句子列表
     :return: samples(list)样本列表  [(event, sentence, 0), ]
     """
@@ -86,13 +85,37 @@ def get_parts(content: str):
     """
     parts = []
 
-    if len(content) > 128:
-        parts.append(content[0:128])
-        parts.append(content[-128:])
+    if len(content) > 256:
+        parts.append(content[0:256])
+        parts.append(content[-256:])
     else:
         parts.append(content)
 
     return parts
+
+
+def get_cut_contents(content:str):
+    """
+    传入文章内容，分句后按照最长句子长度组成文章片段
+    :param content: 文章内容
+    :return: contents
+    """
+    contents = []
+    sentences = get_sentences(content)
+    # 限制字符
+    temp = ''
+    for once in sentences:
+        if len(temp) + len(str(once)) < pre_config.maxlen:
+            temp = f"{temp} {str(once)}"
+        else:
+            # 使用免费接口进行翻译，报错则使用收费接口
+            contents.append(temp)
+            temp = once
+    # 如果最后一个不在里边则添加进去
+    if temp not in contents:
+        contents.append(temp)
+
+    return contents
 
 
 def sort_socres(event_list: list, pred: list):
@@ -122,12 +145,11 @@ def sort_socres(event_list: list, pred: list):
     return event_sorted
 
 
-def get_predict_result(model, event_list: list, title: str, content: str, sample_type: str):
+def get_predict_result(model, event_list: list, content: str, sample_type: str):
     """
     传入模型对象以及事件列表和待匹配的文本，返回匹配后的事件id及对应的相似度
     :param model: 匹配模型对象
     :param event_list: (list)事件列表
-    :param title: (str)文章标题
     :param content: (str)文章内容
     :param sample_type: (str)匹配类型
     :return: {事件ID:score}
@@ -149,59 +171,41 @@ def get_predict_result(model, event_list: list, title: str, content: str, sample
 
         return results
 
-    logger.info("开始对标题进行事件识别。。。")
-    # 清洗标题
-    title = data_process(title)
-    title = supplement(title)
     # 清洗文章内容
     content = data_process(content)
     content = supplement(content)
-    # 获取以标题构造的样本[(event, title),(event, title),(event, title)]
-    title_samples = generate_samples(event_list, [title])
 
-
-    logger.info("开始对文章内容进行摘要。。。")
     # 判断文章样本类型，根据类型生成样本
     if sample_type == 'abstract':
+        logger.info("开始对文章内容进行摘要。。。")
         # 抽取文章摘要句子
         summary_sentences = get_abstract(content, pre_config.abstract_n)
-        content_samples = generate_samples(event_list, summary_sentences)
+        content_samples = generate_samples(event_list, [" ".join(summary_sentences)])
     elif sample_type == "all":
+        # 按照句子长度进行分割
+        contents = get_cut_contents(content)
         # 使用文章中的每个句子做匹配对
-        sentences = get_sentences(content)
-        content_samples = generate_samples(event_list, sentences)
+        content_samples = generate_samples(event_list, contents)
     else:
         # 获取文章的部分片段作为样本
         parts_sentences = get_parts(content)
         content_samples = generate_samples(event_list, parts_sentences)
 
-    # 标题样本生成对象
-    title_generator = DataGenerator(title_samples, TOKENIZER, max_length=pre_config.maxlen, batch_size=pre_config.batch_size)
-    # 获取文章标题匹配结果
-    title_results = evaluate(title_generator)
     # 文章内容样本生成对象
     content_generator = DataGenerator(content_samples, TOKENIZER, max_length=pre_config.maxlen,
-                                      batch_size=pre_config.batch_size)
+                                      batch_size=pre_config.batch_size, random=False)
     # 获取文章内容匹配结果
     content_results = evaluate(content_generator)
-
-    # 整理匹配结果
-    # [[event1, title, score], ]
-    title_predicted = []
-    for elem, pred in zip(title_generator.data, title_results):
-        title_predicted.append([elem[0], elem[1], pred])
 
     # [[event1, sentence, score], ]
     content_predicted = []
     for elem, pred in zip(content_generator.data, content_results):
         content_predicted.append([elem[0], elem[1], pred])
 
-    # 标题匹配结果排序
-    title_pred = sort_socres(event_list, title_predicted)
     # 文章内容匹配结果排序
     content_pred = sort_socres(event_list, content_predicted)
 
-    return title_pred, content_pred
+    return content_pred
 
 
 if __name__ == '__main__':

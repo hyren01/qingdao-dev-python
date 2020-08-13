@@ -11,6 +11,21 @@ import json
 from feedwork.utils import logger
 
 
+def list_find(list1, list2):
+    """
+    在序列list1中寻找子串list2,如果找到，返回第一个下标；
+    如果找不到，返回-1
+    :param list1: (list, str)
+    :param list2: (list, str)
+    :return: i(int)起始下标， -1 未找到
+    """
+    n_list2 = len(list2)
+    for i in range(len(list1)):
+        if list1[i: i + n_list2] == list2:
+            return i
+    return -1
+
+
 def valid_file(file_path: str):
     """
     传入文件路径，判断文件是否存在，存在则返回1, 不存在则返回0
@@ -111,7 +126,6 @@ def file_saver(content: str, file_path: str):
     assert isinstance(content, str)
 
     with open(file_path, "w", encoding="utf-8") as file:
-
         file.write(content)
 
 
@@ -123,23 +137,37 @@ def data_process(content):
     """
     assert isinstance(content, str)
 
+    def normalize_num_str(content: str):
+        """
+        传入字符串，对字符串中的数字字符串进行处理，解决 1,000 类字符串中逗号引起的模型抽取问题
+        :param content: 文本字符串
+        :return: content(str)数字字符串规范化以后的文本内容
+        """
+        # 正则模板
+        p = re.compile(r'(\d[,，]{1}\d)')
+        # 查找所有的模板匹配组
+        m = p.findall(content)
+        for once in m:
+            content = content.replace(once, re.sub('[,，]', "", once))
+
+        return content
+
     if content:
+        # 将文章中字符串内容的数字进行规范化，去除数字中的逗号
+        content = normalize_num_str(content)
+        # 清洗url标签
         content = re.sub('<.*?>', '', content)
         content = re.sub('【.*?】', '', content)
         # 剔除邮箱
         content = re.sub('([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})', '', content)
         content = re.sub('[a-z\d]+(\.[a-z\d]+)*@([\da-z](-[\da-z])?)+(\.{1,2}[a-z]+)+', '', content)
         # 剔除URL
-        content = re.sub("(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?",'',content)
-        # 剔除16进制值
-        content = re.sub('#?([a-f0-9]{6}|[a-f0-9]{3})', '', content)
+        content = re.sub("(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?", '', content)
         # 剔除IP地址
         content = re.sub('((2[0-4]\d|25[0-5]|[01]?\d\d?)\.){3}(2[0-4]\d|25[0-5]|[01]?\d\d?)', '', content)
-        content = re.sub('(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)', '',
-            content)
-        # 剔除用户名密码名
-        content = re.sub('[a-z0-9_-]{3,16}', '', content)
-        content = re.sub('[a-z0-9_-]{6,18}', '', content)
+        content = re.sub('(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)',
+                         '',
+                         content)
         # 剔除网络字符，剔除空白符
         content = content.strip().strip('\r\n\t').replace(u'\u3000', '').replace(u'\xa0', '')
         content = content.replace('\t', '').replace(' ', '').replace('\n', '').replace('\r', '')
@@ -147,7 +175,7 @@ def data_process(content):
     return content
 
 
-def get_sentences(content: str):
+def get_sentences(content: str, maxlen=160):
     """
     传入一篇中文文章，获取文章中的每一个句子，返回句子列表。对中文、日文文本进行拆分。
     # todo 可以考虑说话部分的分句， 例如‘xxx：“xxx。”xx，xxxx。’
@@ -155,6 +183,22 @@ def get_sentences(content: str):
     :return: sentences(list) 分句后的列表
     :raise: TypeError
     """
+
+    def supplement(sentences: list):
+        """
+        传入句子列表，判断句子是否因正则切分导致过长，使用暴力切分方式进行分句
+        :param sentences: 句子列表
+        :return: results(list)
+        """
+        data = []
+        for once in sentences:
+            if len(once) > maxlen:
+                data.extend([f"{i}。" for i in re.split('[。？！?!]', once) if i])
+            else:
+                data.append(once)
+
+        return data
+
     if not isinstance(content, str):
         logger.error("The content you want to be split is not string!")
         raise TypeError
@@ -196,13 +240,47 @@ def get_sentences(content: str):
         result_string = f"{result_string[:loc[0]]}{pack}{result_string[loc[1]:]}"
 
     # 使用切分符将文章内容切分成句子
-    sentences = result_string.split(split_sign)
+    sentences = supplement(result_string.split(split_sign))
 
     return sentences
 
 
+def supplement_nums(part: str, s: str):
+    """
+    传入子串和原始字符串，不全子串前后的数值
+    :param part: 子串
+    :param s: 原始字符串
+    :return: part(str)补全后的子串
+    """
+    start = list_find(s, part)
+    end = start + len(part)
+
+    if s[start] != s[0]:
+        if s[start - 1].isdigit():
+            for i in s[start - 1::-1]:
+                if not i.isdigit():
+                    break
+                part = f"{i}{part}"
+
+    if s[end - 1] != s[-1]:
+        if s[end].isdigit():
+            for i in s[end:]:
+                if not i.isdigit():
+                    break
+                part = f"{i}{part}"
+
+    return part
+
+
 if __name__ == "__main__":
+    content = """
+    俄罗斯外交部无任所大使科尔丘诺夫28日在接受卫星通讯社采访时表示，俄罗斯在北极的活动与军事和政治局势是相称的。 斯普特尼克/弗拉基米尔·阿斯塔波维奇俄罗斯原子能公司:新系列核破冰船中的最后一艘“楚科奇”号将于2021年建造。 科尔舒诺夫说:“俄罗斯在北极地区升级科尔舒诺夫武装力量和进行作战训练的活动不是多余的，而是防御性的。” 与新出现的军事政治形势相称，不对北极国家的国家安全构成威胁，不违反任何国际法协议。 其目的之一是确保北纬地区的生态安全，救援和科学工作。 7月28（俄罗斯卫星通讯社）--俄罗斯外交部无任所大使尼古拉·科尔丘诺夫也强调，“俄罗斯从未在其他北极国家领土上部署”俄罗斯自己的士兵，也没有“俄罗斯提供”俄罗斯自己的领土供其他国家部署“军队”。 此外，俄罗斯也没有在北极地区与非北极国家进行军事演习，因为非北极国家在高纬度地区的军事活动只会削弱地区安全，加剧冲突和紧张，“7月28号（俄罗斯卫星通讯社）--俄罗斯外交部无任所大使尼古拉·科尔丘诺夫指出”。 早些时候，美国负责欧洲和欧亚事务的第一副国务卿迈克尔·墨菲说，俄罗斯在北极增加军事存在“超出了防御范围”，五角大楼和俄罗斯的盟友应该做出回应。特别是7月28号（俄罗斯卫星通讯社），俄罗斯外交部无任所大使尼古拉·科尔丘诺夫提到了俄罗斯将建立新的北极司令部和北极支队，重建港口和机场，建设新的基础设施，并计划在科拉半岛部署S-400系统。 科尔丘诺夫说，美国没有就租借或出售破冰船问题与俄罗斯进行过接触。 此外，在建造自己舰队的同时，指示美国部门研究从伙伴国包租破冰船的可能性，Korchunov Korchunov说。 美国专家认为，俄罗斯首先包括芬兰，瑞典和加拿大。 美国人没有就租赁或出售破冰船一事与我们联系。 “美国总统特朗普下令计划为北极和南极洲建造破冰船”。 为了“支持这些地区的国家利益”，计划发展一支破冰船舰队，其中将包括至少三艘重型船和几艘中型破冰船。 此外，科尔丘诺夫表示，在俄北极岛屿部署S-400防空导弹是自然的一步，完全是出于防御的需要。 至于S-400防空导弹在俄罗斯北极岛屿上的存在，这是继在我国领土上建立密集雷达网之后的自然步骤，“科尔丘诺夫说。”。 S-400防空导弹系统是专为防御而设的，而且无论S-400防空导弹系统部署在哪里，S-400防空导弹系统都不应该引起不安，当然，如果表示这种不安的人不是对S-400防空导弹所保护的区域或设施别有用心的话。
+    
+    """
+    sentences = get_sentences(data_process(content))
 
-    content = ""
+    print(sentences)
 
-    sentences = get_sentences(content)
+    # sentences = get_sentences(content)
+    #
+    # print(sentences)

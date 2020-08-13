@@ -101,3 +101,4 @@ def vec_match(x1, x2, match_model):
             pred = match_model.predict([np.array([x1]), np.array([x2])])
 
     return pred[0][1]
+

@@ -33,10 +33,12 @@ def read_cameo2id(file_path: str):
                 content = file.read()
 
         # 读取到内容则跳出循环
-        if content:
+        if content and content is not None:
+            try:
+                data = json.loads(content)
+            except:
+                continue
             break
-
-    data = json.loads(content)
 
     return data
 

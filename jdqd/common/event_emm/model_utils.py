@@ -161,8 +161,7 @@ def generate_trained_model_path(trained_model_dir: str, trained_model_name: str)
     if not trained_model_name.endswith(".h5"):
         logger.error(f"{trained_model_name} must end with .h5")
         raise ValueError
-    # 按照当前时间年月日生成文件夹，构建训练后模型的保存位置
-    trained_model_dir = cat_path(trained_model_dir, time.strftime('%Y-%m-%d', time.localtime(time.time())))
+
     trained_model_path = cat_path(trained_model_dir, trained_model_name)
     # 如果文件夹不存在则生成
     if not os.path.exists(trained_model_dir):

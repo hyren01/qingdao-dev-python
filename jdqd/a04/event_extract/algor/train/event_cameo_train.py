@@ -10,12 +10,12 @@ import tensorflow as tf
 from keras.layers import Lambda, Dense, Dropout
 from keras.models import Model
 from keras.callbacks import Callback
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from bert4keras.models import build_transformer_model
 from bert4keras.backend import K
 from bert4keras.optimizers import Adam
 from feedwork.utils import logger
-from jdqd.common.event_emm.model_utils import TOKENIZER, generate_trained_model_path
+from jdqd.common.event_emm.model_utils import TOKENIZER
 from jdqd.a04.event_extract.algor.train.utils.event_cameo_data_util import DataGenerator, get_data
 import jdqd.a04.event_extract.config.CameoTrainConfig as cameo_train_config
 import jdqd.common.event_emm.BertConfig as bert_config
@@ -25,7 +25,7 @@ GRAPH = tf.Graph()
 SESS = tf.Session(graph=GRAPH)
 
 # 创建训练后的保存路径,按照当前日期创建模型保存文件夹
-TRAINED_MODEL_PATH = generate_trained_model_path(cameo_train_config.trained_model_dir, cameo_train_config.trained_model_name)
+TRAINED_MODEL_PATH = cameo_train_config.trained_model_path
 # 加载训练集和验证集
 TRAIN_DATA, DEV_DATA, ID2LABEL, LABEL2ID = get_data(cameo_train_config.train_data_path, cameo_train_config.dev_data_path, cameo_train_config.label2id_path,
                                                     cameo_train_config.id2label_path)
@@ -131,7 +131,7 @@ class Evaluate(Callback):
         :return: None
         """
         # 计算验证集准确率
-        accuracy = self.evaluate()
+        accuracy, f1, precison, recall = self.evaluate()
         # 如果验证集准确率比历史最高还要高则保存模型
         if accuracy > self.best:
             self.best = accuracy
@@ -162,8 +162,9 @@ class Evaluate(Callback):
         y_true = [int(once[1]) for once in DEV_DATA]
         # 验证集准确率
         accuracy = accuracy_score(y_true, y_pred)
+        f1, precison, recall, _ = precision_recall_fscore_support(y_true, y_pred, average="macro")
 
-        return accuracy
+        return accuracy, f1, precison, recall
 
 
 def model_train():
@@ -177,13 +178,15 @@ def model_train():
             train_d = DataGenerator(TOKENIZER, cameo_train_config.maxlen, TRAIN_DATA, cameo_train_config.batch_size)
             evaluator = Evaluate()
             # 模型训练
-            MODEL.fit_generator(train_d.__iter__(), steps_per_epoch=train_d.__len__(), epochs=40, callbacks=[evaluator])
+            MODEL.fit_generator(train_d.__iter__(), steps_per_epoch=train_d.__len__(), epochs=cameo_train_config.epoch, callbacks=[evaluator])
             # 模型重载
             MODEL.load_weights(TRAINED_MODEL_PATH)
             # 最后调用模型预测测试集，输出最优模型在验证集上的准确率
-            accuracy = evaluator.evaluate()
+            accuracy, f1, precison, recall = evaluator.evaluate()
             logger.info(f"accuracy:{accuracy}")
+
+    return accuracy, f1, precison, recall
 
 
 if __name__ == '__main__':
-    model_train()
+    accuracy, f1, precison, recall = model_train()

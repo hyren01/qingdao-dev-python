@@ -46,7 +46,7 @@ class DataGenerator(object,):
     """构建数据生成器，对传入的数据进行编码、shuffle、分批，迭代返回
     """
 
-    def __init__(self, data, tokenizer, max_length=128, batch_size=8):
+    def __init__(self, data, tokenizer, max_length=128, batch_size=8, random = False):
         """
         接收分字器、最大长度、数据、批量大小
         :param data:(list)传入的数据
@@ -58,6 +58,7 @@ class DataGenerator(object,):
         self.tokenizer = tokenizer
         self.maxlen = max_length
         self.batch_size = batch_size
+        self.random = random
         # 计算数据步数
         self.steps = len(self.data) // self.batch_size
         if len(self.data) % self.batch_size != 0:
@@ -69,14 +70,13 @@ class DataGenerator(object,):
         """
         return self.steps
 
-    def __iter__(self, random=False):
+    def __iter__(self,):
         """
         构造迭代方法
-        :param random: bool 是否进行随机打乱
         :return:模型训练需要的数据
         """
         idxs = list(range(len(self.data)))
-        if random:
+        if self.random:
             np.random.shuffle(idxs)
 
         batch_token_ids, batch_segment_ids, batch_labels = [], [], []
@@ -88,8 +88,9 @@ class DataGenerator(object,):
             batch_token_ids.append(token_ids)
             batch_segment_ids.append(segment_ids)
             batch_labels.append(int(label))
+
             # 判断是否已经到达批量
-            if len(batch_token_ids) == self.batch_size or i == idxs[-1]:
+            if len(batch_token_ids) >= self.batch_size or i == idxs[-1]:
                 batch_token_ids = seq_padding(batch_token_ids)
                 batch_segment_ids = seq_padding(batch_segment_ids)
                 batch_labels = np.array(batch_labels)
@@ -99,5 +100,5 @@ class DataGenerator(object,):
     def forfit(self):
         # 循环迭代输出数据
         while True:
-            for d in self.__iter__(True):
+            for d in self.__iter__():
                 yield d

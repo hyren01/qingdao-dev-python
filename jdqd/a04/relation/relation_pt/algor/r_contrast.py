@@ -1,13 +1,14 @@
 from itertools import product
 from jdqd.a04.relation.relation_pt.algor import pattern, relation_util
 
-base_words = ['尽管', '虽然', '固然']
+base_words = ['尽管', '虽然', '固然', '虽说', '虽']
 contrast_words1 = ['只不过', '不过', '但是', '反而', '然而', '可是', '但', '还是']
 contrast_words2 = ['还是', '还', '却']
 keywords1 = list(product(base_words, contrast_words1))
 keywords2 = list(product(base_words, contrast_words2))
 keywords = keywords1 + keywords2
 keywords_single = [[w] for w in contrast_words1]
+base_words_single = [[w] for w in base_words]
 
 keyword_rules = {
     'rule101': keywords,
@@ -16,10 +17,11 @@ keyword_rules = {
     'rule104': keywords,
     'rule201': keywords_single,
     'rule202': keywords_single,
-    'rule301': keywords,
-    'rule302': keywords,
-    'rule4': keywords
+    'rule301': base_words_single,
+    'rule302': base_words_single,
+    'rule4': base_words_single
 }
+
 
 def rule101(sentence, keyword):
     # 匹配模式: ...虽然..., ...但是...
@@ -68,4 +70,11 @@ def rule4(sentence, keyword):
 
 rules = [rule101, rule102, rule103, rule201, rule202, rule301, rule302, rule4]
 keyword_rules = relation_util.tuple_to_list(keyword_rules)
+rw_type = 'contrast'
 
+if __name__ == '__main__':
+    sentence = '尽管我是他爸爸， 不过我把他弄死了。'
+    for kw in keywords:
+        rst = rule101(sentence, kw)
+        if rst:
+            print(rst)
