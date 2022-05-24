@@ -1,7 +1,7 @@
 pandas==0.25.3
 numpy==1.18.5
 scikit-learn==0.23.1
-tensorflow==1.13.2
+tensorflow==2.6.4
 flask==1.1.1
 neo4j==1.7.6
 neo4j-driver==1.7.6
